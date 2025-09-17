@@ -2,9 +2,13 @@
 import sqlite3
 import csv
 import json
-from database_logic import *
+from Database.database_logic import *
 from Models.Session_data_model import Session_data
-from Models.parkinglots_model import parking_lots_model
+from Models.parkinglots_model import Parking_lots_model
+from Models.reservations_model import Reservations_model
+from Models.user_model import User_model
+from Models.vehicle_model import Vehicle_model
+import datetime
 
 
 def load_json(filename):
@@ -48,6 +52,12 @@ def write_text(filename, data):
     with open(filename, 'w') as file:
         for line in data:
             file.write(line + '\n')
+
+
+def write_log(message):
+    filename = datetime.datetime.now().strftime("log_%Y-%m-%d.txt")
+    with open(filename, 'a') as file:
+        file.write(message + '\n')
 
 
 def save_data(filename, data):
@@ -112,9 +122,87 @@ def save_discounts_data(data):
     save_data('data/discounts.csv', data)
 
 
-data = load_data('v1\data\pdata\p1-sessions.json')
-parking_lots = load_data('v1\data\parking-lots.json')
+connection = get_connection('v1\Database\MobyPark.db')
 
-for entry_key, entry_value in parking_lots.items():
-    insert_parking_lot(
-        get_connection('v1\MobyPark.db'), parking_lots_model.from_dict(entry_value))
+
+def get_parking_lot_data_from_json():
+    return load_data('v1\data\parking-lots.json')
+
+
+def get_user_data_from_json():
+    return load_data("v1//data//users.json")
+
+
+def get_vehicle_data_from_json():
+    return load_data('v1\data//vehicles.json')
+
+
+def get_reservation_data_from_json():
+    return load_data('v1\data//reservations.json')
+
+
+def add_parking_lots_to_db():
+    connection = get_connection()
+    parking_lots = get_parking_lot_data_from_json()
+    logs = []
+    for entry_value in parking_lots.values():
+        if not record_exists(connection, 'parking_lots', Parking_lots_model.to_dict(entry_value)):
+            insert_parking_lot(
+                connection, Parking_lots_model.from_dict(entry_value))
+        else:
+            log_message = f"Parking lot with ID {entry_value['id']} already exists. Skipping insertion."
+            logs.append(log_message)
+    write_log('\n'.join(logs))
+
+
+def add_users_to_db():
+    connection = get_connection()
+    users = get_user_data_from_json()
+    logs = []
+    for entry_value in users:
+        if not record_exists(connection, 'users', entry_value):
+            insert_user(
+                connection, User_model.from_dict(entry_value))
+        else:
+            log_message = f"User with ID {entry_value['id']} already exists. Skipping insertion."
+            logs.append(log_message)
+    write_log('\n'.join(logs))
+
+
+def add_vehicles_to_db():
+    connection = get_connection()
+    vehicles = get_vehicle_data_from_json()
+    logs = []
+    for entry_value in vehicles:
+        if not record_exists(connection, 'vehicles', entry_value):
+            insert_vehicle(
+                connection, Vehicle_model.from_dict(entry_value))
+        else:
+            log_message = f"Vehicle with ID {entry_value['id']} already exists. Skipping insertion."
+            logs.append(log_message)
+    write_log('\n'.join(logs))
+
+
+def add_reservations_to_db():
+    connection = get_connection()
+    reservations = get_reservation_data_from_json()
+    logs = []
+    for entry_value in reservations:
+        if not record_exists(connection, 'reservations', entry_value):
+            insert_reservation(
+                connection, Reservations_model.from_dict(entry_value))
+        else:
+            log_message = f"Reservation with ID {entry_value['id']} already exists. Skipping insertion."
+            logs.append(log_message)
+    write_log('\n'.join(logs))
+
+
+def main():
+    add_parking_lots_to_db()
+    # add_users_to_db()
+    # add_vehicles_to_db()
+    # add_reservations_to_db()
+
+
+if __name__ == "__main__":
+    main()

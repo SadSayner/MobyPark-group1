@@ -1,4 +1,4 @@
-class reservations_model:
+class Reservations_model:
     def __init__(self, id, user_id, parking_lot_id, vehicle_id, start_time, end_time, status, created_at, cost):
         self.id = id
         self.user_id = user_id
@@ -12,7 +12,7 @@ class reservations_model:
 
     @staticmethod
     def from_dict(data):
-        return reservations_model(
+        return Reservations_model(
             id=data['id'],
             user_id=data['user_id'],
             parking_lot_id=data['parking_lot_id'],
