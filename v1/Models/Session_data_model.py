@@ -1,6 +1,7 @@
 class Session_data:
-    def __init__(self, id, parking_lot_id, licenseplate, started, stopped, user, duration_minutes, cost, payment_status):
-        self.id = id
+    def __init__(self, session_id, parking_lot_id, licenseplate,
+                 started, stopped, user, duration_minutes, cost, payment_status):
+        self.session_id = session_id
         self.parking_lot_id = parking_lot_id
         self.licenseplate = licenseplate
         self.started = started
@@ -11,20 +12,31 @@ class Session_data:
         self.payment_status = payment_status
 
     @staticmethod
-    def from_dict(data):
+    def from_dict(data: dict) -> "Session_data":
         return Session_data(
-            id=data['id'],
-            parking_lot_id=data['parking_lot_id'],
-            licenseplate=data['licenseplate'],
-            started=data['started'],
-            stopped=data['stopped'],
-            user=data['user'],
-            duration_minutes=data['duration_minutes'],
-            cost=data['cost'],
-            payment_status=data['payment_status']
+            session_id=data.get("session_id", data.get(
+                "id")),   # ✅ fallback to old "id"
+            parking_lot_id=data["parking_lot_id"],
+            licenseplate=data["licenseplate"],
+            started=data["started"],
+            stopped=data.get("stopped"),
+            user=data.get("user"),
+            duration_minutes=data.get("duration_minutes"),
+            cost=data.get("cost"),
+            payment_status=data.get("payment_status", "unpaid")
         )
 
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool:
         if not isinstance(other, Session_data):
             return False
-        return self.id == other.id and self.parking_lot_id == other.parking_lot_id and self.licenseplate == other.licenseplate and self.started == other.started and self.stopped == other.stopped and self.user == other.user and self.duration_minutes == other.duration_minutes and self.cost == other.cost and self.payment_status == other.payment_status
+        return (
+            self.session_id == other.session_id
+            and self.parking_lot_id == other.parking_lot_id
+            and self.licenseplate == other.licenseplate
+            and self.started == other.started
+            and self.stopped == other.stopped
+            and self.user == other.user
+            and self.duration_minutes == other.duration_minutes
+            and self.cost == other.cost
+            and self.payment_status == other.payment_status
+        )

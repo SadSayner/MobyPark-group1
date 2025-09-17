@@ -197,8 +197,23 @@ def add_reservations_to_db():
     write_log('\n'.join(logs))
 
 
+def add_session_data_to_db():
+    connection = get_connection()
+    sessions = load_data('v1\data\pdata\p2-sessions.json')
+    logs = []
+    for entry_value in sessions.values():
+        if not record_exists(connection, 'parking_sessions', entry_value):
+            insert_parking_session(
+                connection, Session_data.from_dict(entry_value))
+        else:
+            log_message = f"Session with ID {entry_value['id']} already exists. Skipping insertion."
+            logs.append(log_message)
+    write_log('\n'.join(logs))
+
+
 def main():
-    add_parking_lots_to_db()
+    add_session_data_to_db()
+    # add_parking_lots_to_db()
     # add_users_to_db()
     # add_vehicles_to_db()
     # add_reservations_to_db()

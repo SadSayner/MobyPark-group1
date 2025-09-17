@@ -337,6 +337,80 @@ def insert_parking_session(con: sqlite3.Connection, session_obj) -> int:
     Insert a parking session into the `parking_sessions` table.
 
     Expects an object with attributes:
+      session_id, parking_lot_id, licenseplate, started, stopped, user,
+      duration_minutes, cost, payment_status
+
+    Returns the auto-generated global id (int).
+    Raises ValueError for validation issues and sqlite3.IntegrityError for FK/PK conflicts.
+    """
+    con.execute("PRAGMA foreign_keys = ON;")
+
+    # --- Parse & validate ---
+    try:
+        session_id = int(session_obj.session_id)
+        lot_id = int(session_obj.parking_lot_id)
+        duration = None if session_obj.duration_minutes in (
+            None, "") else int(session_obj.duration_minutes)
+        cost = None if session_obj.cost in (
+            None, "") else float(session_obj.cost)
+    except (TypeError, ValueError):
+        raise ValueError(
+            "session_id, parking_lot_id, duration_minutes, and cost must be numeric when provided.")
+
+    payment_status = (session_obj.payment_status or "").lower()
+    if payment_status not in _VALID_PAYMENT_STATUSES:
+        raise ValueError(
+            f"payment_status must be one of {_VALID_PAYMENT_STATUSES}, got '{session_obj.payment_status}'.")
+
+    if duration is not None and duration < 0:
+        raise ValueError("duration_minutes cannot be negative.")
+    if cost is not None and cost < 0:
+        raise ValueError("cost cannot be negative.")
+
+    # Check ISO8601 times
+    def _check_iso8601(ts: str, field: str):
+        if ts is None:
+            return
+        try:
+            if ts.endswith("Z"):
+                datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")
+            else:
+                datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        except Exception:
+            raise ValueError(
+                f"{field} must be ISO8601 (e.g., 2020-03-25T20:29:47Z); got '{ts}'.")
+
+    _check_iso8601(session_obj.started, "started")
+    _check_iso8601(session_obj.stopped, "stopped")
+
+    # --- Build payload ---
+    payload = {
+        "session_id": session_id,
+        "parking_lot_id": lot_id,
+        "licenseplate": session_obj.licenseplate,
+        "started": session_obj.started,
+        "stopped": session_obj.stopped,
+        "user": session_obj.user,
+        "duration_minutes": duration,
+        "cost": cost,
+        "payment_status": payment_status,
+    }
+
+    sql = """
+    INSERT INTO parking_sessions
+      (session_id, parking_lot_id, licenseplate, started, stopped, user, duration_minutes, cost, payment_status)
+    VALUES
+      (:session_id, :parking_lot_id, :licenseplate, :started, :stopped, :user, :duration_minutes, :cost, :payment_status)
+    """
+
+    with con:
+        cur = con.execute(sql, payload)
+        return cur.lastrowid  # returns global auto id
+
+    """
+    Insert a parking session into the `parking_sessions` table.
+
+    Expects an object with attributes:
       id, parking_lot_id, licenseplate, started, stopped, user,
       duration_minutes, cost, payment_status
 
@@ -390,7 +464,7 @@ def insert_parking_session(con: sqlite3.Connection, session_obj) -> int:
     payload = {
         "id": rec_id,  # can be None to auto-assign if column defined AUTOINCREMENT; with INTEGER PRIMARY KEY it's fine too
         "parking_lot_id": lot_id,
-        "license_plate": session_obj.licenseplate,
+        "licenseplate": session_obj.licenseplate,
         "started": session_obj.started,
         "stopped": session_obj.stopped,
         "user": session_obj.user,
@@ -401,12 +475,26 @@ def insert_parking_session(con: sqlite3.Connection, session_obj) -> int:
 
     sql = """
     INSERT INTO parking_sessions
-      (id, parking_lot_id, license_plate, started, stopped, user, duration_minutes, cost, payment_status)
+      (id, parking_lot_id, licenseplate, started, stopped, user, duration_minutes, cost, payment_status)
     VALUES
-      (:id, :parking_lot_id, :license_plate, :started, :stopped, :user, :duration_minutes, :cost, :payment_status)
+      (:id, :parking_lot_id, :licenseplate, :started, :stopped, :user, :duration_minutes, :cost, :payment_status)
     """
 
     with con:
         cur = con.execute(sql, payload)
         # If id was provided, SQLite returns that; if None, rowid is generated
         return cur.lastrowid
+
+
+def wipe_table(con: sqlite3.Connection, table: str):
+    """
+    Delete all records from the specified table.
+
+    Parameters:
+        con   - open sqlite3.Connection
+        table - naam van de tabel (string)
+    """
+    con.execute("PRAGMA foreign_keys = ON;")
+    sql = f"DELETE FROM {table}"
+    with con:
+        con.execute(sql)
