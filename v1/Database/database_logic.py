@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+import re
 import sqlite3
 from datetime import datetime
 
@@ -484,6 +486,196 @@ def insert_parking_session(con: sqlite3.Connection, session_obj) -> int:
         cur = con.execute(sql, payload)
         # If id was provided, SQLite returns that; if None, rowid is generated
         return cur.lastrowid
+
+
+def insert_payment(con: sqlite3.Connection, payment_obj) -> int:
+    """
+    Insert a payment into the `payments` table.
+
+    Expects a dict or object with attributes:
+      id, transaction (or transaction_id), amount, initiator, created_at,
+      completed, hash, t_amount, t_date, t_method, t_issuer, t_bank
+
+    - Accepts created_at/completed/t_date as:
+        * ISO8601 (e.g. 2025-12-03T11:00:00Z)  -> kept as-is
+        * 'DD-MM-YYYY HH:MM:UNIX'              -> converted to ISO8601 using the UNIX
+        * plain UNIX (10 or 13 digits)         -> converted to ISO8601 (UTC)
+        * 'DD-MM-YYYY HH:MM'                   -> converted to ISO8601 with :00 seconds (UTC)
+
+    Returns the inserted row id.
+    Raises ValueError for validation issues and sqlite3.IntegrityError for FK/PK conflicts.
+    """
+    con.execute("PRAGMA foreign_keys = ON;")
+
+    def _get(src, key, default=None):
+        if isinstance(src, dict):
+            return src.get(key, default)
+        return getattr(src, key, default)
+
+    # --- converters ---------------------------------------------------------
+    def _to_iso8601(s: str) -> str:
+        """
+        Convert 'DD-MM-YYYY HH:MM:UNIX' or plain UNIX (10/13 digits) to ISO8601 UTC.
+        If no UNIX is found, try 'DD-MM-YYYY HH:MM' as UTC.
+        """
+        s = str(s).strip()
+        # Use trailing UNIX if present (10 or 13 digits)
+        m = re.search(r'(\d{10}|\d{13})$', s)
+        if m:
+            ts = int(m.group(1))
+            if len(m.group(1)) == 13:  # milliseconds
+                ts //= 1000
+            return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        # Fallback: parse 'DD-MM-YYYY HH:MM' (first 16 chars), assume UTC
+        dt = datetime.strptime(
+            s[:16], "%d-%m-%Y %H:%M").replace(tzinfo=timezone.utc)
+        return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def _normalize_iso(ts):
+        """Return ts as ISO8601 Z. If already ISO8601, keep; otherwise try to convert."""
+        if not ts:
+            return ts
+        ts = str(ts).strip()
+        try:
+            # already ISO with Z?
+            if ts.endswith("Z"):
+                datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")
+                return ts
+            # already ISO without Z (or with offset)?
+            datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            return ts
+        except Exception:
+            # try to coerce DD-MM-YYYY/UNIX hybrid or plain UNIX
+            return _to_iso8601(ts)
+
+    # -----------------------------------------------------------------------
+
+    # Parse fields
+    try:
+        pay_id = None if _get(payment_obj, "id") in (
+            None, "") else int(_get(payment_obj, "id"))
+        transaction_id = str(_get(payment_obj, "transaction")
+                             or _get(payment_obj, "transaction_id"))
+        amount = float(_get(payment_obj, "amount"))
+        t_amount = None if _get(payment_obj, "t_amount") in (
+            None, "") else float(_get(payment_obj, "t_amount"))
+    except (TypeError, ValueError):
+        raise ValueError(
+            "id must be integer; amount/t_amount must be numeric.")
+
+    initiator = str(_get(payment_obj, "initiator") or "")
+    created_at = _normalize_iso(_get(payment_obj, "created_at"))
+    completed = _normalize_iso(_get(payment_obj, "completed"))
+    hash_val = str(_get(payment_obj, "hash") or "")
+    t_date = _normalize_iso(_get(payment_obj, "t_date"))
+    t_method = _get(payment_obj, "t_method")
+    t_issuer = _get(payment_obj, "t_issuer")
+    t_bank = _get(payment_obj, "t_bank")
+
+    # Basic validations
+    if not transaction_id:
+        raise ValueError("transaction_id cannot be empty.")
+    if amount < 0:
+        raise ValueError("amount must be non-negative.")
+    if not initiator:
+        raise ValueError("initiator cannot be empty.")
+    if not hash_val:
+        raise ValueError("hash cannot be empty.")
+
+    # Final ISO8601 checks for timestamps
+    def _check_iso(ts: str, field: str):
+        if not ts:
+            return
+        try:
+            if ts.endswith("Z"):
+                datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")
+            else:
+                datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        except Exception:
+            raise ValueError(
+                f"{field} must be ISO8601 (e.g. 2025-12-03T11:00:00Z), got '{ts}'.")
+
+    _check_iso(created_at, "created_at")
+    _check_iso(completed, "completed")
+    _check_iso(t_date, "t_date")
+
+    payload = {
+        "id": pay_id,
+        "transaction_id": transaction_id,
+        "amount": amount,
+        "initiator": initiator,
+        "created_at": created_at,
+        "completed": completed,
+        "hash": hash_val,
+        "t_amount": t_amount,
+        "t_date": t_date,
+        "t_method": t_method,
+        "t_issuer": t_issuer,
+        "t_bank": t_bank,
+    }
+
+    sql = """
+    INSERT INTO payments
+      (id, transaction_id, amount, initiator, created_at, completed, hash,
+       t_amount, t_date, t_method, t_issuer, t_bank)
+    VALUES
+      (:id, :transaction_id, :amount, :initiator, :created_at, :completed, :hash,
+       :t_amount, :t_date, :t_method, :t_issuer, :t_bank)
+    """
+
+    with con:
+        cur = con.execute(sql, payload)
+        return cur.lastrowid
+
+
+def insert_payments_bulk(conn: sqlite3.Connection, payments, chunk_size: int = 1000):
+    # 1) Snellere schrijfinstellingen (veilig genoeg voor de meeste loads)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
+
+    # 2) Voorbereide statement (met UPSERT op unieke transaction_id)
+    sql = """
+    INSERT INTO payments (
+        transaction_id, amount, initiator, created_at, completed, hash,
+        t_amount, t_date, t_method, t_issuer, t_bank
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(transaction_id) DO UPDATE SET
+        amount=excluded.amount,
+        initiator=excluded.initiator,
+        created_at=excluded.created_at,
+        completed=excluded.completed,
+        hash=excluded.hash,
+        t_amount=excluded.t_amount,
+        t_date=excluded.t_date,
+        t_method=excluded.t_method,
+        t_issuer=excluded.t_issuer,
+        t_bank=excluded.t_bank;
+    """
+
+    # 3) Maak tuples van je objecten/dicts (dit is snel voor executemany)
+    def val(src, key, default=None):
+        return src.get(key, default) if isinstance(src, dict) else getattr(src, key, default)
+
+    rows = []
+    for p in payments:
+        rows.append((
+            val(p, "transaction_id") or val(p, "transaction"),
+            float(val(p, "amount") or 0),
+            val(p, "initiator"),
+            val(p, "created_at"),
+            val(p, "completed"),
+            val(p, "hash"),
+            val(p, "t_amount"),
+            val(p, "t_date"),
+            val(p, "t_method"),
+            val(p, "t_issuer"),
+            val(p, "t_bank"),
+        ))
+
+    # 4) Eén transactie voor alle batches
+    with conn:  # -> BEGIN ... COMMIT één keer
+        for i in range(0, len(rows), chunk_size):
+            conn.executemany(sql, rows[i:i+chunk_size])
 
 
 def wipe_table(con: sqlite3.Connection, table: str):

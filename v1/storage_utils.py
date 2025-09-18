@@ -8,6 +8,7 @@ from Models.parkinglots_model import Parking_lots_model
 from Models.reservations_model import Reservations_model
 from Models.user_model import User_model
 from Models.vehicle_model import Vehicle_model
+from Models.payment_model import Payment_model
 import datetime
 
 
@@ -16,6 +17,7 @@ def load_json(filename):
         with open(filename, 'r') as file:
             return json.load(file)
     except FileNotFoundError:
+        print(f"File {filename} not found.")
         return []
 
 
@@ -107,7 +109,7 @@ def save_reservation_data(data):
 
 
 def load_payment_data():
-    return load_data('data/payments.json')
+    return load_data('v1\data\payments.json')
 
 
 def save_payment_data(data):
@@ -120,9 +122,6 @@ def load_discounts_data():
 
 def save_discounts_data(data):
     save_data('data/discounts.csv', data)
-
-
-connection = get_connection('v1\Database\MobyPark.db')
 
 
 def get_parking_lot_data_from_json():
@@ -211,8 +210,28 @@ def add_session_data_to_db():
     write_log('\n'.join(logs))
 
 
+def add_payments_to_db():
+    connection = get_connection()
+    payments = load_data('v1\data\payments.json')
+    logs = []
+    for entry_value in payments:
+        transaction = Payment_model.to_dict(
+            Payment_model.from_dict(entry_value))
+        if not record_exists(connection, 'payments', transaction):
+            insert_payment(
+                connection, Payment_model.from_dict(entry_value))
+        else:
+            log_message = f"Payment with ID {entry_value['id']} already exists. Skipping insertion."
+            logs.append(log_message)
+    write_log('\n'.join(logs))
+
+
 def main():
-    add_session_data_to_db()
+    payments = load_data('v1\data\payments.json')
+    print(payments[0])
+    # add_payments_to_db()
+    print("Payments added to DB")
+    # add_session_data_to_db()
     # add_parking_lots_to_db()
     # add_users_to_db()
     # add_vehicles_to_db()
