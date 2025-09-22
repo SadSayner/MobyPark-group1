@@ -43,3 +43,6 @@ class Parking_lots_model:
             'lat': data['coordinates']['lat'],
             'lng': data['coordinates']['lng']
         }
+
+    def __repr__(self):
+        return f"Parking_lots_model(id={self.id}, name={self.name}, location={self.location}, address={self.address}, capacity={self.capacity}, reserved={self.reserved}, tariff={self.tariff}, daytariff={self.daytariff}, created_at={self.created_at}, lat={self.lat}, lng={self.lng})"

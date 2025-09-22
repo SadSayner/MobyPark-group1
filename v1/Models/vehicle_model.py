@@ -21,3 +21,6 @@ class Vehicle_model:
             year=data['year'],
             created_at=data['created_at']
         )
+
+    def __repr__(self):
+        return f"Vehicle_model(id={self.id}, user_id={self.user_id}, license_plate={self.license_plate}, make={self.make}, model={self.model}, color={self.color}, year={self.year}, created_at={self.created_at})"

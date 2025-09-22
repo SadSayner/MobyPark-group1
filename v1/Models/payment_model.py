@@ -46,3 +46,7 @@ class Payment_model:
             "t_issuer": self.t_issuer,
             "t_bank": self.t_bank,
         }
+
+
+def __repr__(self):
+    return f"Payment_model(transaction_id={self.transaction_id}, amount={self.amount}, initiator={self.initiator}, created_at={self.created_at}, completed={self.completed}, hash={self.hash}, t_amount={self.t_amount}, t_date={self.t_date}, t_method={self.t_method}, t_issuer={self.t_issuer}, t_bank={self.t_bank})"

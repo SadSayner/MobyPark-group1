@@ -25,3 +25,6 @@ class User_model:
             birth_year=data['birth_year'],
             active=data['active']
         )
+
+    def __repr__(self):
+        return f"User_model(id={self.id}, username={self.username}, password={self.password}, name={self.name}, email={self.email}, phone={self.phone}, role={self.role}, created_at={self.created_at}, birth_year={self.birth_year}, active={self.active})"

@@ -1,7 +1,14 @@
 from datetime import datetime, timezone
 import re
 import sqlite3
-from datetime import datetime
+import os
+import sys
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from Models.parkinglots_model import Parking_lots_model  # noqa
+from Models.user_model import User_model  # noqa
+from Models.vehicle_model import Vehicle_model  # noqa
+from Models.reservations_model import Reservations_model  # noqa
 
 _VALID_PAYMENT_STATUSES = {"unpaid", "pending", "paid", "failed"}
 _VALID_STATUSES = {"pending", "confirmed", "cancelled"}
@@ -129,17 +136,44 @@ def insert_parking_lot(con: sqlite3.Connection, lot_obj) -> int:
         return cur.lastrowid
 
 
+def get_all_parking_lots(con: sqlite3.Connection):
+    """
+    Haal alle records op uit de tabel `parking_lots`.
+
+    Parameters:
+        con - open sqlite3.Connection
+
+    Returns:
+        Lijst van dicts, elk representerend een record.
+    """
+    con.execute("PRAGMA foreign_keys = ON;")
+    sql = "SELECT * FROM parking_lots"
+    cur = con.execute(sql)
+    rows = cur.fetchall()
+    return [Parking_lots_model.from_dict(**dict(row)) for row in rows]
+
+
+def get_parking_lot_by_id(con: sqlite3.Connection, lot_id: int):
+    """
+    Haal een record op uit de tabel `parking_lots` op basis van het id.
+
+    Parameters:
+        con    - open sqlite3.Connection
+        lot_id - id van de parking lot (int)
+
+    Returns:
+        Een dict representerend het record, of None als niet gevonden.
+    """
+    con.execute("PRAGMA foreign_keys = ON;")
+    sql = "SELECT * FROM parking_lots WHERE id = ?"
+    cur = con.execute(sql, (lot_id,))
+    row = cur.fetchone()
+    if row:
+        return Parking_lots_model.from_dict(**dict(row))
+    return None
+
+
 def insert_user(con: sqlite3.Connection, user_obj) -> int:
-    """
-    Insert a user into the `users` table.
-
-    Expects an object with attributes:
-      id, username, password, name, email, phone,
-      role, created_at (YYYY-MM-DD), birth_year, active
-
-    Returns the inserted row id.
-    Raises ValueError for validation issues and sqlite3.IntegrityError for FK/PK conflicts.
-    """
     con.execute("PRAGMA foreign_keys = ON;")
 
     # Extract values
@@ -193,6 +227,54 @@ def insert_user(con: sqlite3.Connection, user_obj) -> int:
     with con:
         cur = con.execute(sql, payload)
         return cur.lastrowid
+
+
+def get_all_users(con: sqlite3.Connection):
+    con.execute("PRAGMA foreign_keys = ON;")
+    sql = "SELECT * FROM users"
+    cur = con.execute(sql)
+    rows = cur.fetchall()
+    return [User_model.from_dict(row) for row in rows]
+
+
+def get_user_by_id(con: sqlite3.Connection, user_id: int):
+    con.execute("PRAGMA foreign_keys = ON;")
+    sql = "SELECT * FROM users WHERE id = ?"
+    cur = con.execute(sql, (user_id,))
+    row = cur.fetchone()
+    if row:
+        return User_model.from_dict(row)
+    return None
+
+
+def get_users_by_username(con: sqlite3.Connection, username: str):
+    con.execute("PRAGMA foreign_keys = ON;")
+    sql = "SELECT * FROM users WHERE username = ?"
+    cur = con.execute(sql, (username,))
+    rows = cur.fetchall()
+    if rows:
+        return [User_model.from_dict(row) for row in rows]
+    return None
+
+
+def get_users_by_name(con: sqlite3.Connection, name: str):
+    con.execute("PRAGMA foreign_keys = ON;")
+    sql = "SELECT * FROM users WHERE name = ?"
+    cur = con.execute(sql, (name,))
+    rows = cur.fetchall()
+    if rows:
+        return [User_model.from_dict(row) for row in rows]
+    return None
+
+
+def get_users_by_email(con: sqlite3.Connection, email: str):
+    con.execute("PRAGMA foreign_keys = ON;")
+    sql = "SELECT * FROM users WHERE email = ?"
+    cur = con.execute(sql, (email,))
+    rows = cur.fetchall()
+    if rows:
+        return [User_model.from_dict(row) for row in rows]
+    return None
 
 
 def insert_vehicle(con: sqlite3.Connection, vehicle_obj) -> int:
@@ -251,6 +333,44 @@ def insert_vehicle(con: sqlite3.Connection, vehicle_obj) -> int:
     with con:
         cur = con.execute(sql, payload)
         return cur.lastrowid
+
+
+def get_all_vehicles(con: sqlite3.Connection):
+    con.execute("PRAGMA foreign_keys = ON;")
+    sql = "SELECT * FROM vehicles"
+    cur = con.execute(sql)
+    rows = cur.fetchall()
+    return [Vehicle_model.from_dict(row) for row in rows]
+
+
+def get_vehicle_by_id(con: sqlite3.Connection, vehicle_id: int):
+    con.execute("PRAGMA foreign_keys = ON;")
+    sql = "SELECT * FROM vehicles WHERE id = ?"
+    cur = con.execute(sql, (vehicle_id,))
+    row = cur.fetchone()
+    if row:
+        return Vehicle_model.from_dict(row)
+    return None
+
+
+def get_vehicles_by_user_id(con: sqlite3.Connection, user_id: int):
+    con.execute("PRAGMA foreign_keys = ON;")
+    sql = "SELECT * FROM vehicles WHERE user_id = ?"
+    cur = con.execute(sql, (user_id,))
+    rows = cur.fetchall()
+    if rows:
+        return [Vehicle_model.from_dict(row) for row in rows]
+    return None
+
+
+def get_vehicles_by_license_plate(con: sqlite3.Connection, license_plate: str):
+    con.execute("PRAGMA foreign_keys = ON;")
+    sql = "SELECT * FROM vehicles WHERE license_plate = ?"
+    cur = con.execute(sql, (license_plate,))
+    rows = cur.fetchall()
+    if rows:
+        return [Vehicle_model.from_dict(row) for row in rows]
+    return None
 
 
 def insert_reservation(con: sqlite3.Connection, reservation_obj) -> int:
@@ -332,6 +452,54 @@ def insert_reservation(con: sqlite3.Connection, reservation_obj) -> int:
     with con:
         cur = con.execute(sql, payload)
         return cur.lastrowid
+
+
+def get_all_reservations(con: sqlite3.Connection):
+    con.execute("PRAGMA foreign_keys = ON;")
+    sql = "SELECT * FROM reservations"
+    cur = con.execute(sql)
+    rows = cur.fetchall()
+    return [Reservations_model.from_dict(row) for row in rows]
+
+
+def get_reservation_by_id(con: sqlite3.Connection, reservation_id: int):
+    con.execute("PRAGMA foreign_keys = ON;")
+    sql = "SELECT * FROM reservations WHERE id = ?"
+    cur = con.execute(sql, (reservation_id,))
+    row = cur.fetchone()
+    if row:
+        return Reservations_model.from_dict(row)
+    return None
+
+
+def get_reservations_by_user_id(con: sqlite3.Connection, user_id: int):
+    con.execute("PRAGMA foreign_keys = ON;")
+    sql = "SELECT * FROM reservations WHERE user_id = ?"
+    cur = con.execute(sql, (user_id,))
+    rows = cur.fetchall()
+    if rows:
+        return [Reservations_model.from_dict(row) for row in rows]
+    return None
+
+
+def get_reservations_by_parking_lot_id(con: sqlite3.Connection, parking_lot_id: int):
+    con.execute("PRAGMA foreign_keys = ON;")
+    sql = "SELECT * FROM reservations WHERE parking_lot_id = ?"
+    cur = con.execute(sql, (parking_lot_id,))
+    rows = cur.fetchall()
+    if rows:
+        return [Reservations_model.from_dict(row) for row in rows]
+    return None
+
+
+def get_reservations_by_vehicle_id(con: sqlite3.Connection, vehicle_id: int):
+    con.execute("PRAGMA foreign_keys = ON;")
+    sql = "SELECT * FROM reservations WHERE vehicle_id = ?"
+    cur = con.execute(sql, (vehicle_id,))
+    rows = cur.fetchall()
+    if rows:
+        return [Reservations_model.from_dict(row) for row in rows]
+    return None
 
 
 def insert_parking_session(con: sqlite3.Connection, session_obj) -> int:

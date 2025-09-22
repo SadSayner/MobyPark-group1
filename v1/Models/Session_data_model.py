@@ -40,3 +40,9 @@ class Session_data:
             and self.cost == other.cost
             and self.payment_status == other.payment_status
         )
+
+    def __repr__(self):
+        return (f"Session_data(session_id={self.session_id}, parking_lot_id={self.parking_lot_id}, "
+                f"licenseplate={self.licenseplate}, started={self.started}, stopped={self.stopped}, "
+                f"user={self.user}, duration_minutes={self.duration_minutes}, cost={self.cost}, "
+                f"payment_status={self.payment_status})")
