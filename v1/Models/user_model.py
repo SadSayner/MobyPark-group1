@@ -1,4 +1,9 @@
 class User_model:
+
+    _WIDTHS = [20, 20, 35, 22, 15, 10, 15, 12, 10]
+    _HEADERS = ["id", "username", "email", "name", "phone",
+                "role", "created_at", "birth_year", "active"]
+
     def __init__(self, id, username, password, name, email, phone, role, created_at, birth_year, active):
         self.id = id
         self.username = username
@@ -11,25 +16,36 @@ class User_model:
         self.birth_year = birth_year
         self.active = active
 
-    def __repr__(self):
-        # Define column widths
-        widths = [20, 20, 35, 22, 15, 10, 15, 12, 10]
+    # --- helpers ---
 
-        values = [
+    @classmethod
+    def _line(cls):
+        return "+" + "+".join("-" * w for w in cls._WIDTHS) + "+"
+
+    @classmethod
+    def _header_row(cls):
+        return "| " + " | ".join(f"{h:<{w-2}}" for h, w in zip(cls._HEADERS, cls._WIDTHS)) + " |"
+
+    def _values(self):
+        return [
             str(self.id), self.username, self.email, self.name, self.phone,
             self.role, str(self.created_at), str(
                 self.birth_year), str(self.active)
         ]
 
-        # Build the horizontal line
-        line = "+" + "+".join("-" * w for w in widths) + "+"
+    def _row(self):
+        return "| " + " | ".join(f"{v:<{w-2}}" for v, w in zip(self._values(), self._WIDTHS)) + " |"
 
-        # Build the value row
-        value_row = "| " + \
-            " | ".join(f"{v:<{w-2}}" for v, w in zip(values, widths)) + " |"
+    # --- key bits ---
+    def __repr__(self):
+        # Row-only: used when inside lists, dicts, etc.
+        return self._row()
 
-        # Combine all parts
-        return f"{value_row}\n{line}"
+    def __str__(self):
+        # Full table with header: used by print(user)
+        line = self._line()
+        header = self._header_row()
+        return f"{line}\n{header}\n{line}\n{self._row()}\n{line}"
 
     @staticmethod
     def from_dict(data):
@@ -47,23 +63,11 @@ class User_model:
         )
 
     @staticmethod
-    def print_users(users):
-        if not users:
-            print("No users to display.")
-            return
-
-        # Define column widths
-        widths = [20, 20, 35, 22, 15, 10, 15, 12, 10]
-        headers = ["id", "username", "email", "name", "phone",
-                   "role", "created_at", "birth_year", "active"]
-
-        # Build the horizontal line
-        line = "+" + "+".join("-" * w for w in widths) + "+"
-
-        # Build the header row
-        header_row = "| " + \
-            " | ".join(f"{h:<{w-2}}" for h, w in zip(headers, widths)) + " |"
-
-        print(f'{line}\n{header_row}\n{line}')
-        for user in users:
-            print(user)
+    def format_table(objects, cls):
+        line = _line(cls)
+        header = _header_row(cls)
+        if not objects:
+            # Optional: a nice empty table
+            return f"{line}\n{header}\n{line}\n{line}"
+        rows = "\n".join(o._row() for o in objects)
+        return f"{line}\n{header}\n{line}\n{rows}\n{line}"
