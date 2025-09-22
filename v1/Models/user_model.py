@@ -27,4 +27,26 @@ class User_model:
         )
 
     def __repr__(self):
-        return f"User_model(id={self.id}, username={self.username}, password={self.password}, name={self.name}, email={self.email}, phone={self.phone}, role={self.role}, created_at={self.created_at}, birth_year={self.birth_year}, active={self.active})"
+        # Define column widths
+        widths = [20, 20, 35, 22, 15, 10, 15, 12, 10]
+        headers = ["id", "username", "email", "name", "phone",
+                   "role", "created_at", "birth_year", "active"]
+        values = [
+            str(self.id), self.username, self.email, self.name, self.phone,
+            self.role, str(self.created_at), str(
+                self.birth_year), str(self.active)
+        ]
+
+        # Build the horizontal line
+        line = "+" + "+".join("-" * w for w in widths) + "+"
+
+        # Build the header row
+        header_row = "| " + \
+            " | ".join(f"{h:<{w-2}}" for h, w in zip(headers, widths)) + " |"
+
+        # Build the value row
+        value_row = "| " + \
+            " | ".join(f"{v:<{w-2}}" for v, w in zip(values, widths)) + " |"
+
+        # Combine all parts
+        return f"{line}\n{header_row}\n{line}\n{value_row}\n{line}"
