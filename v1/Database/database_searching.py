@@ -26,20 +26,13 @@ user_models = []
 for user in users:
     user_models.append(get_user_by_id(connection, user))
 
+print(User_model.format_table(user_models))
 
 # for user in user_models:
 #     print(user)
 
-print(user_models)
+# print(user_models)
 # print(User_model.format_table([]))
-
-
-def _line(cls):
-    return "+" + "+".join("-" * w for w in cls._WIDTHS) + "+"
-
-
-def _header_row(cls):
-    return "| " + " | ".join(f"{h:<{w-2}}" for h, w in zip(cls._HEADERS, cls._WIDTHS)) + " |"
 
 
 # print(_line(User_model))

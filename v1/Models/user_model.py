@@ -17,7 +17,6 @@ class User_model:
         self.active = active
 
     # --- helpers ---
-
     @classmethod
     def _line(cls):
         return "+" + "+".join("-" * w for w in cls._WIDTHS) + "+"
@@ -63,9 +62,9 @@ class User_model:
         )
 
     @staticmethod
-    def format_table(objects, cls):
-        line = _line(cls)
-        header = _header_row(cls)
+    def format_table(objects):
+        line = User_model._line()
+        header = User_model._header_row()
         if not objects:
             # Optional: a nice empty table
             return f"{line}\n{header}\n{line}\n{line}"
