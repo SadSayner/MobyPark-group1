@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from typing import Optional, Dict, Any
 from datetime import datetime
 
-from v1.server.deps import require_session, require_admin
+from server.deps import require_session, require_admin
 from storage_utils import load_json, save_data, load_json as load
 
 router = APIRouter()

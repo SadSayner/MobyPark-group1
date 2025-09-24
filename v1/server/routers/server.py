@@ -3,9 +3,9 @@ import hashlib
 import uuid
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from storage_utils import load_json, save_data, save_user_data, load_parking_lot_data, save_parking_lot_data, save_reservation_data, load_reservation_data, load_payment_data, save_payment_data
-from session_manager import add_session, remove_session, get_session
-import session_calculator as sc
+from v1.storage_utils import load_json, save_data, save_user_data, load_parking_lot_data, save_parking_lot_data, save_reservation_data, load_reservation_data, load_payment_data, save_payment_data
+from v1.session_manager import add_session, remove_session, get_session
+import v1.session_calculator as sc
 
 class RequestHandler(BaseHTTPRequestHandler):
     def do_POST(self):

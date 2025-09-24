@@ -1,4 +1,3 @@
-
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
@@ -19,16 +18,23 @@ class ReservationIn(BaseModel):
 def create_reservation(payload: ReservationIn, user = Depends(require_session)):
     reservations = load_reservation_data()
     parking_lots = load_parking_lot_data()
-    for field in ["licenseplate", "startdate", "enddate", "parkinglot"]:
-        if getattr(payload, field) in (None, ""):
-            raise HTTPException(400, detail={"error": "Require field missing", "field": field})
+
+    if payload.licenseplate in (None, ""):
+        raise HTTPException(400, detail={"error": "Require field missing", "field": "licenseplate"})
+    if payload.startdate in (None, ""):
+        raise HTTPException(400, detail={"error": "Require field missing", "field": "startdate"})
+    if payload.enddate in (None, ""):
+        raise HTTPException(400, detail={"error": "Require field missing", "field": "enddate"})
+    if payload.parkinglot in (None, ""):
+        raise HTTPException(400, detail={"error": "Require field missing", "field": "parkinglot"})
     if payload.parkinglot not in parking_lots:
         raise HTTPException(404, detail={"error": "Parking lot not found", "field": "parkinglot"})
+ 
     rid = str(len(reservations) + 1)
     data = payload.model_dump()
-    if user.get("role") != "ADMIN":
+    if user["role"] != "ADMIN":
         data["user"] = user["username"]
-    elif not data.get("user"):
+    elif not data["user"]:
         raise HTTPException(400, detail={"error": "Require field missing", "field": "user"})
     reservations[rid] = data
     data["id"] = rid
@@ -43,7 +49,7 @@ def get_reservation(rid: str, user = Depends(require_session)):
     if rid not in reservations:
         raise HTTPException(404, detail="Reservation not found")
     r = reservations[rid]
-    if user.get("role") != "ADMIN" and r.get("user") != user["username"]:
+    if user["role"] != "ADMIN" and r["user"] != user["username"]:
         raise HTTPException(403, detail="Access denied")
     return r
 
@@ -53,12 +59,19 @@ def update_reservation(rid: str, payload: ReservationIn, user = Depends(require_
     if rid not in reservations:
         raise HTTPException(404, detail="Reservation not found")
     data = payload.model_dump()
-    for field in ["licenseplate", "startdate", "enddate", "parkinglot"]:
-        if getattr(payload, field) in (None, ""):
-            raise HTTPException(400, detail={"error": "Require field missing", "field": field})
-    if user.get("role") != "ADMIN":
+
+    if payload.licenseplate in (None, ""):
+        raise HTTPException(400, detail={"error": "Require field missing", "field": "licenseplate"})
+    if payload.startdate in (None, ""):
+        raise HTTPException(400, detail={"error": "Require field missing", "field": "startdate"})
+    if payload.enddate in (None, ""):
+        raise HTTPException(400, detail={"error": "Require field missing", "field": "enddate"})
+    if payload.parkinglot in (None, ""):
+        raise HTTPException(400, detail={"error": "Require field missing", "field": "parkinglot"})
+  
+    if user["role"] != "ADMIN":
         data["user"] = user["username"]
-    elif not data.get("user"):
+    elif not data["user"]:
         raise HTTPException(400, detail={"error": "Require field missing", "field": "user"})
     reservations[rid] = data
     save_reservation_data(reservations)
@@ -70,8 +83,8 @@ def delete_reservation(rid: str, user = Depends(require_session)):
     parking_lots = load_parking_lot_data()
     if rid not in reservations:
         raise HTTPException(404, detail="Reservation not found")
-    owner = reservations[rid].get("user")
-    if user.get("role") != "ADMIN" and owner != user["username"]:
+    owner = reservations[rid]["user"]
+    if user["role"] != "ADMIN" and owner != user["username"]:
         raise HTTPException(403, detail="Access denied")
     pid = reservations[rid]["parkinglot"]
     del reservations[rid]
