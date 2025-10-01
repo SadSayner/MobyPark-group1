@@ -1,14 +1,12 @@
 class Session_data:
-    def __init__(self, session_id, parking_lot_id, licenseplate,
-                 started, stopped, user, duration_minutes, cost, payment_status):
+    def __init__(self, session_id, parking_lot_id, vehicle_id,
+                 started, user_id, duration_minutes, payment_status):
         self.session_id = session_id
         self.parking_lot_id = parking_lot_id
-        self.licenseplate = licenseplate
+        self.vehicle_id = vehicle_id
         self.started = started
-        self.stopped = stopped
-        self.user = user
+        self.user_id = user_id
         self.duration_minutes = duration_minutes
-        self.cost = cost
         self.payment_status = payment_status
 
     @staticmethod
@@ -17,12 +15,11 @@ class Session_data:
             session_id=data.get("session_id", data.get(
                 "id")),   # ✅ fallback to old "id"
             parking_lot_id=data["parking_lot_id"],
-            licenseplate=data["licenseplate"],
+            vehicle_id=data["licenseplate"],
             started=data["started"],
             stopped=data.get("stopped"),
-            user=data.get("user"),
+            user_id=data.get("user"),
             duration_minutes=data.get("duration_minutes"),
-            cost=data.get("cost"),
             payment_status=data.get("payment_status", "unpaid")
         )
 
@@ -32,12 +29,10 @@ class Session_data:
         return (
             self.session_id == other.session_id
             and self.parking_lot_id == other.parking_lot_id
-            and self.licenseplate == other.licenseplate
+            and self.vehicle_id == other.vehicle_id
             and self.started == other.started
-            and self.stopped == other.stopped
-            and self.user == other.user
+            and self.user_id == other.user_id
             and self.duration_minutes == other.duration_minutes
-            and self.cost == other.cost
             and self.payment_status == other.payment_status
         )
 
