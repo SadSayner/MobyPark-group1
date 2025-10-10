@@ -220,9 +220,59 @@ PARKING_FIELDS = ("name", "location", "address", "capacity",
                   "reserved", "tariff", "daytariff", "created_at", "lat", "lng")
 
 SQL_INSERT_PARKING = f"""
-INSERT INTO parking_lots ({", ".join(PARKING_FIELDS)})
+INSERT OR IGNORE INTO parking_lots ({", ".join(PARKING_FIELDS)})
 VALUES ({", ".join("?" for _ in PARKING_FIELDS)});
 """
+
+
+def _dedupe_parking_lots(conn: sqlite3.Connection, *, debug: bool = True):
+    cur = conn.cursor()
+    conn.execute("PRAGMA foreign_keys=OFF;")
+    try:
+        cur.execute("""
+            WITH groups AS (
+              SELECT lower(trim(name)) AS k1,
+                     lower(trim(address)) AS k2,
+                     MIN(id) AS keep_id,
+                     COUNT(*) AS cnt
+              FROM parking_lots
+              GROUP BY k1, k2
+              HAVING cnt > 1
+            )
+            SELECT p.id AS dup_id, g.keep_id
+            FROM parking_lots p
+            JOIN groups g
+              ON lower(trim(p.name)) = g.k1
+             AND lower(trim(p.address)) = g.k2
+            WHERE p.id <> g.keep_id
+            ORDER BY g.keep_id, p.id;
+        """)
+        rows = cur.fetchall()
+        if debug and rows:
+            print(f"[PARKING-DEDUP] merging {len(rows)} duplicates")
+
+        for dup_id, keep_id in rows:
+            # repoint FKs that reference parking_lots(id)
+            cur.execute(
+                "UPDATE OR IGNORE sessions SET parking_lot_id=? WHERE parking_lot_id=?", (keep_id, dup_id))
+            cur.execute(
+                "UPDATE OR IGNORE reservations SET parking_lot_id=? WHERE parking_lot_id=?", (keep_id, dup_id))
+            cur.execute(
+                "UPDATE OR IGNORE payments SET parking_lot_id=? WHERE parking_lot_id=?", (keep_id, dup_id))
+            cur.execute("DELETE FROM parking_lots WHERE id=?", (dup_id,))
+        conn.commit()
+    finally:
+        conn.execute("PRAGMA foreign_keys=ON;")
+
+
+def ensure_unique_index_parking_lots(conn: sqlite3.Connection):
+    _dedupe_parking_lots(conn)
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_parking_lots_name_addr
+        ON parking_lots (name COLLATE NOCASE, address COLLATE NOCASE);
+    """)
+    conn.commit()
 
 
 def normalize_parking_rows(raw_rows: Union[List[Row], Dict[str, Row]]) -> List[Row]:
@@ -246,6 +296,7 @@ def normalize_parking_rows(raw_rows: Union[List[Row], Dict[str, Row]]) -> List[R
 
 
 def insert_parking_lots(conn: sqlite3.Connection, rows, *, debug: bool = False) -> Dict[str, int]:
+    ensure_unique_index_parking_lots(conn)
     rows_norm = normalize_parking_rows(rows)
     rows_ok, missing = _require_fields(rows_norm, PARKING_FIELDS, debug=debug)
     data = _normalize_rows(rows_ok, PARKING_FIELDS)
@@ -253,8 +304,8 @@ def insert_parking_lots(conn: sqlite3.Connection, rows, *, debug: bool = False) 
     result["failed"] += missing
     return result
 
-# ------------------- VEHICLES ----------------------------
 
+# ------------------- VEHICLES ----------------------------
 
 VEHICLE_FIELDS = ("license_plate", "make", "model",
                   "color", "year", "created_at")
@@ -838,6 +889,7 @@ def insert_parking_sessions(
     ensure_unique_index_sessions(conn)
 
     rows_norm = _normalize_parking_session_rows(conn, rows, debug=debug)
+    print(rows_norm[:3])
 
     # Prefilter: skip rijen met missende/verkeerde FKs om FOREIGN KEY errors te vermijden
     valid_rows: List[Row] = []
@@ -912,10 +964,23 @@ __all__ = [
 ]
 
 conn = get_connection()
+
+# parking_lots = load_data("v1/data/parking-lots.json")
+# print("lots:", insert_parking_lots(conn, parking_lots, debug=True))
+
+# users = load_data("v1/data/users.json")
+# print("users:", insert_users(conn, users, debug=True))
+
+# vehicles = load_data("v1/data/vehicles.json")
+# print("vehicles:", insert_vehicles(conn, vehicles, debug=True))
+
+# reservations = load_data("v1/data/reservations.json")
+# print("reservations:", insert_reservations(
+#     conn, reservations, users_source=users, debug=True))
+
 parking_sessions = load_data("v1/data/pdata/p1-sessions.json")
-print("sessions:", insert_parking_sessions(conn, parking_sessions, debug=True))
+print("sessions:", insert_parking_sessions(
+    conn, parking_sessions, debug=False))
 
-
-# # Payments
-# payments = load_data("v1/data/payments2.json")
-# print("payments:", insert_payments(conn, payments, debug=True))
+payments = load_data("v1/data/payments2.json")
+print("payments:", insert_payments(conn, payments, debug=True))
