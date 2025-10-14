@@ -346,6 +346,35 @@ VALUES ({", ".join("?" for _ in PAY_FIELDS)});
 """
 
 
+def _dedupe_payments_by_tx(conn: sqlite3.Connection, *, debug: bool = True):
+    """
+    Keep the oldest row per transaction_id, drop the rest.
+    """
+    cur = conn.cursor()
+    # Drop exact duplicates leaving MIN(rowid)
+    cur.execute("""
+        DELETE FROM payments
+        WHERE rowid NOT IN (
+            SELECT MIN(rowid)
+            FROM payments
+            GROUP BY transaction_id
+        )
+    """)
+    if debug:
+        print(f"[PAY-DEDUP] after cleanup, kept one per transaction_id")
+    conn.commit()
+
+
+def ensure_unique_index_payments(conn: sqlite3.Connection):
+    _dedupe_payments_by_tx(conn)
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_payments_tx
+        ON payments (transaction_id);
+    """)
+    conn.commit()
+
+
 def _parse_dt_lenient(s: Any) -> str | None:
     if not s:
         return None
@@ -466,43 +495,32 @@ def normalize_payment_rows(
     *,
     sessions_source: Union[List[Row], Dict[str, Row], None] = None,
     debug: bool = False
-) -> List[Row]:
-    """
-    Past JSON -> DB mapping toe:
-      - transaction -> transaction_id
-      - initiator (username) -> user_id (voorkeur)
-      - t_data (date/method/issuer/bank)
-      - created_at/completed naar correcte vorm
-      - valideert/herstelt FK's voor user_id, session_id, parking_lot_id
-    """
+) -> Tuple[List[Row], int]:  # <- return (rows, fk_invalid_count)
     lod = to_list_of_dicts(raw_rows)
 
-    # Map initiator usernames -> user_id in bulk
     need_usernames = {r.get("initiator") for r in lod if r.get("initiator")}
     initiator_map = _map_usernames_to_user_ids(
         conn, {u for u in need_usernames if u})
 
-    # (Optioneel) bouw JSON session map en remap naar DB
     json_session_map: Dict[int, Tuple[Any, Any, Any, Any]] = {}
     if sessions_source is not None:
         json_session_map = _build_session_natural_key_map(sessions_source)
 
     out: List[Row] = []
+    fk_invalid = 0
+
     for r in lod:
         t_data = r.get("t_data") or {}
         transaction_id = r.get("transaction_id") or r.get("transaction")
         amount = r.get("amount", t_data.get("amount"))
 
-        # Prefer user_id via initiator (als aanwezig)
         uid_from_json = _to_int(r.get("user_id"))
         uid_from_initiator = initiator_map.get(
             str(r["initiator"])) if r.get("initiator") else None
-        user_id = uid_from_initiator or uid_from_json  # prefer initiator mapping
+        user_id = uid_from_initiator or uid_from_json
 
-        # Session-id: als de meegegeven id niet bestaat, probeer remap via sessions_source
         session_id = _to_int(r.get("session_id"))
         if session_id is not None and not _db_has_session_id(conn, session_id):
-            # remap via natuurlijke sleutel als we de json sessions kennen
             if sessions_source is not None and session_id in json_session_map:
                 key = json_session_map[session_id]
                 new_sid = _db_find_session_id_by_key(conn, key)
@@ -526,7 +544,7 @@ def normalize_payment_rows(
             "t_bank":         t_data.get("bank"),
         }
 
-        # FK sanity: als user/lot/session niet bestaat -> markeer als invalid (we skippen later)
+        # FK sanity
         fk_missing = []
         if norm["user_id"] is None or not _db_has_user_id(conn, norm["user_id"]):
             fk_missing.append("user_id")
@@ -535,15 +553,16 @@ def normalize_payment_rows(
         if norm["parking_lot_id"] is None or not _db_has_parking_lot_id(conn, norm["parking_lot_id"]):
             fk_missing.append("parking_lot_id")
 
-        if fk_missing and debug:
-            print(
-                f"[PAY-FK] skipping tx={transaction_id} missing/invalid FKs: {fk_missing}")
+        if fk_missing:
+            fk_invalid += 1
+            if debug:
+                print(
+                    f"[PAY-FK] skipping tx={transaction_id} missing/invalid FKs: {fk_missing}")
+            continue
 
-        # Alleen toevoegen als alle FKs geldig zijn
-        if not fk_missing:
-            out.append(norm)
+        out.append(norm)
 
-    return out
+    return out, fk_invalid
 
 
 def insert_payments(
@@ -553,14 +572,23 @@ def insert_payments(
     sessions_source: Union[List[Row], Dict[str, Row], None] = None,
     debug: bool = False
 ) -> Dict[str, int]:
-    rows_norm = normalize_payment_rows(
+    # Ensure uniqueness so duplicates become "skipped"
+    ensure_unique_index_payments(conn)
+
+    rows_norm, fk_invalid = normalize_payment_rows(
         conn, rows, sessions_source=sessions_source, debug=debug)
+
+    # Count rows that miss required columns (incl. NULL tx_id, etc.) as failed
     rows_ok, missing = _require_fields(rows_norm, PAY_FIELDS, debug=debug)
     data = _normalize_rows(rows_ok, PAY_FIELDS)
+
     result = _batch_insert_per_row(
         conn, SQL_INSERT_PAYMENTS_IGNORE, data, debug=debug)
-    result["failed"] += missing
+
+    # Add in our pre-insert failures
+    result["failed"] += (missing + fk_invalid)
     return result
+
 
 # ------------------- RESERVATIONS (with email remap) ----------------------
 
