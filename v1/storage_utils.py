@@ -14,7 +14,7 @@ import datetime
 
 def load_json(filename):
     try:
-        with open(filename, 'r') as file:
+        with open(filename, 'r', encoding='utf-8') as file:
             return json.load(file)
     except FileNotFoundError:
         print(f"File {filename} not found.")

@@ -251,9 +251,9 @@ def get_users_by_username(con: sqlite3.Connection, username: str):
     con.execute("PRAGMA foreign_keys = ON;")
     sql = "SELECT * FROM users WHERE username = ?"
     cur = con.execute(sql, (username,))
-    rows = cur.fetchall()
-    if rows:
-        return [User_model.from_dict(row) for row in rows]
+    user = cur.fetchone()
+    if user:
+        return User_model.from_dict(user)
     return None
 
 

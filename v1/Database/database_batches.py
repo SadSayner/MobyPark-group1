@@ -26,6 +26,59 @@ Rows = Iterable[Row]
 
 # -------------------------- Utilities --------------------------
 
+USER_ALIAS_TEMP_CSV = "v1/Database/usernames_temp.csv"
+
+
+def merge_dicts_numbered(a: dict, b: dict) -> dict:
+    """
+    Merge b into a. Keys zijn (bij voorkeur) numerieke strings of ints.
+    - Als key uit b vrij is -> direct plaatsen.
+    - Bij overlap -> geef volgende vrije numerieke key (max+1, max+2, ...)
+    Werkt O(n+m) i.p.v. O(n*m).
+    """
+    result = dict(a)
+
+    # Verzamel bestaande numerieke keys (string "123" of int 123)
+    used_nums = set()
+    for k in result.keys():
+        try:
+            used_nums.add(int(k))
+        except (ValueError, TypeError):
+            # Niet-numerieke sleutel in a negeren voor nummering
+            pass
+
+    next_num = (max(used_nums) + 1) if used_nums else 1
+
+    def take_next_free():
+        nonlocal next_num
+        # Sla door tot we een ongebruikt nummer hebben
+        while str(next_num) in result or next_num in result:
+            next_num += 1
+        key = str(next_num)
+        used_nums.add(next_num)
+        next_num += 1
+        return key
+
+    for k, v in b.items():
+        # Probeer directe plaatsing als key nog niet bestaat
+        if k not in result:
+            result[k] = v
+            # Als het een numerieke key is, update next_num indien nodig
+            try:
+                kn = int(k)
+                if kn >= next_num:
+                    next_num = kn + 1
+                used_nums.add(kn)
+            except (ValueError, TypeError):
+                pass
+            continue
+
+        # Conflict: geef een nieuw numeriek sleutel
+        new_k = take_next_free()
+        result[new_k] = v
+
+    return result
+
 
 def to_list_of_dicts(data: Union[Dict[str, Dict[str, Any]], List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
     if isinstance(data, list):
@@ -182,6 +235,99 @@ def map_emails_to_db_user_ids(conn: sqlite3.Connection, emails: Set[str]) -> Dic
     sql = f"SELECT email, MIN(id) as id FROM users WHERE email IN {placeholders} GROUP BY email"
     cur.execute(sql, tuple(emails))
     return {row[0]: row[1] for row in cur.fetchall()}
+# ------------------- CSV Helpers ---------------------------
+
+
+def read_user_alias_csv(csv_path: str = USER_ALIAS_TEMP_CSV) -> Dict[str, str]:
+    """
+    Reads usernames_temp.csv and returns:
+      lower(alias_username) -> lower(canonical_username)
+
+    Blank canonical_username rows are ignored (still unresolved = manual fix needed)
+    """
+    alias_map: Dict[str, str] = {}
+
+    if not os.path.exists(csv_path):
+        return alias_map  # no file -> no aliases
+
+    with open(csv_path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            alias = (row.get("alias_username") or "").strip().lower()
+            canon = (row.get("canonical_username") or "").strip().lower()
+            if alias and canon:
+                alias_map[alias] = canon
+
+    return alias_map
+
+
+def _to_list_of_dicts(obj) -> List[dict]:
+    if isinstance(obj, list):
+        return obj
+    if isinstance(obj, dict):
+        return list(obj.values())
+    return []
+
+
+def build_aliases_from_user_json(
+    users_json_path: str,
+    out_csv_path: str = "usernames_temp.csv",
+) -> Dict[str, int]:
+    """
+    Reads users.json only.
+    Groups by email.
+    First record for each email is canonical.
+    Any additional usernames for the same email
+      -> listed as aliases needing mapping.
+    """
+    raw = load_json(users_json_path)
+    users = _to_list_of_dicts(raw)
+
+    seen_email: Dict[str, str] = {}  # lower(email) -> canonical username
+    alias_rows: List[Tuple[str, str, str]] = []
+
+    for u in users:
+        uname = (u.get("username") or "").strip()
+        email = (u.get("email") or "").strip()
+
+        if not uname or not email:
+            continue
+
+        email_l = email.lower()
+        uname_l = uname.lower()
+
+        if email_l not in seen_email:
+            # First user for this email → canonical
+            seen_email[email_l] = uname
+        else:
+            # Duplicate email → this username becomes an alias
+            canonical_uname = seen_email[email_l]
+            alias_rows.append((uname, canonical_uname, "duplicate email"))
+
+    # Avoid overwriting folder errors
+    os.makedirs(os.path.dirname(out_csv_path) or ".", exist_ok=True)
+
+    with open(out_csv_path, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["alias_username", "canonical_username", "note"])
+        alias_rows_sorted = sorted(alias_rows, key=lambda r: r[0].lower())
+        w.writerows(alias_rows_sorted)
+
+    return {
+        "emails": len(seen_email),
+        "aliases_written": len(alias_rows),
+        "csv_path": out_csv_path,
+    }
+
+
+def delete_user_alias_csv(csv_path: str = USER_ALIAS_TEMP_CSV) -> bool:
+    """
+    Deletes the temp CSV. Returns True if deleted, False if it didn't exist.
+    """
+    if os.path.exists(csv_path):
+        os.remove(csv_path)
+        return True
+    return False
 
 # ------------------- USERS ------------------------------
 
@@ -196,21 +342,29 @@ VALUES ({", ".join("?" for _ in USERS_FIELDS)});
 
 
 def insert_users(conn: sqlite3.Connection, rows: Union[List[Row], Dict[str, Row]], *, debug: bool = False) -> Dict[str, int]:
+    build_aliases_from_user_json(
+        "v1/data/users.json", USER_ALIAS_TEMP_CSV)
     """
     Verwacht alle NOT NULL velden. Vult default role='USER' als niet gegeven.
     Email is UNIQUE in DB -> duplicates worden 'skipped' via OR IGNORE.
+    Maakt of update een tijdelijke alias CSV voor latere sessie-import fase.
     """
     lod = to_list_of_dicts(rows)
+
     for r in lod:
         if r.get("role") in (None, ""):
             r["role"] = "USER"
         r["birth_year"] = _to_int(r.get("birth_year"))
         r["active"] = _to_int_bool(r.get("active"))
+
     rows_ok, missing = _require_fields(lod, USERS_FIELDS, debug=debug)
     data = _normalize_rows(rows_ok, USERS_FIELDS)
+
     result = _batch_insert_per_row(
-        conn, SQL_INSERT_USERS_IGNORE, data, debug=debug)
+        conn, SQL_INSERT_USERS_IGNORE, data, debug=debug
+    )
     result["failed"] += missing
+
     return result
 
 # ------------------- PARKING LOTS --------------------------
@@ -708,252 +862,221 @@ def insert_reservations(
     return result
 
 
-# ------------------- PARKING SESSIONS (with alias resolvers) ----------------
+# ------------------- SESSIONS ------------------------------
 
-# ---- SESSIONS: kolomvolgorde afgestemd op je DB ----
-SESS_FIELDS = (
-    "parking_lot_id",      # 1
-    "vehicle_id",          # 2
-    "user_id",             # 3
-    "started",             # 4
-    "duration_minutes",    # 5
-    "payment_status"       # 6
+SESSIONS_FIELDS = (
+    "parking_lot_id",
+    "user_id",
+    "started",
+    "duration_minutes",
+    "payment_status",
 )
 
 SQL_INSERT_SESSIONS_IGNORE = f"""
-INSERT OR IGNORE INTO sessions ({", ".join(SESS_FIELDS)})
-VALUES ({", ".join("?" for _ in SESS_FIELDS)});
-"""
-
-SQL_INSERT_SESSIONS_IGNORE = f"""
-INSERT OR IGNORE INTO sessions ({", ".join(SESS_FIELDS)})
-VALUES ({", ".join("?" for _ in SESS_FIELDS)});
+INSERT OR IGNORE INTO sessions ({", ".join(SESSIONS_FIELDS)})
+VALUES ({", ".join("?" for _ in SESSIONS_FIELDS)});
 """
 
 
 def ensure_unique_index_sessions(conn: sqlite3.Connection):
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE UNIQUE INDEX IF NOT EXISTS ux_sessions_natural
-        ON sessions (user_id, parking_lot_id, vehicle_id, started);
+    conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_sessions_unique
+        ON sessions (user_id, parking_lot_id, started);
     """)
     conn.commit()
 
 
-def _map_usernames_to_user_ids(conn: sqlite3.Connection, usernames: Set[str]) -> Dict[str, int]:
-    if not usernames:
-        return {}
-    cur = conn.cursor()
-    cur.execute(
-        f"SELECT username, id FROM users WHERE username IN {_make_in_clause(len(usernames))}",
-        tuple(usernames)
-    )
-    return {row[0]: row[1] for row in cur.fetchall()}
+def _lenient_parse_dt(value):
+    """
+    Parse ISO-like strings (supports trailing 'Z') into a timezone-aware UTC datetime.
+    - If value is already a datetime, normalize to UTC.
+    - Naive datetimes are assumed to be UTC.
+    """
+    if value is None:
+        return None
 
+    # Already a datetime?
+    if isinstance(value, datetime.datetime):
+        return value if value.tzinfo else value.replace(tzinfo=datetime.timezone.utc)
 
-def _map_plates_to_vehicle_ids(conn: sqlite3.Connection, plates: Set[str]) -> Dict[str, int]:
-    if not plates:
-        return {}
-    cur = conn.cursor()
-    cur.execute(
-        f"SELECT license_plate, id FROM vehicles WHERE license_plate IN {_make_in_clause(len(plates))}",
-        tuple(plates)
-    )
-    return {row[0]: row[1] for row in cur.fetchall()}
-
-
-def _parse_started_lenient(s: Any) -> str | None:
+    # Convert to string safely
+    s = str(value).strip()
     if not s:
         return None
-    txt = str(s).strip()
-    from datetime import datetime
-    # Z → +00:00 voor %z
-    if txt.endswith("Z"):
-        try:
-            dt = datetime.strptime(txt.replace(
-                "Z", "+00:00"), "%Y-%m-%dT%H:%M:%S%z")
-            return dt.strftime("%Y-%m-%d %H:%M:%S")
-        except Exception:
-            pass
-    patterns = [
-        "%Y-%m-%d %H:%M:%S",
-        "%Y-%m-%d %H:%M",
-        "%Y-%m-%dT%H:%M:%S",
-        "%Y-%m-%dT%H:%M",
-        "%Y-%m-%dT%H:%M:%S%z",
-    ]
-    for p in patterns:
-        try:
-            dt = datetime.strptime(txt, p)
-            return dt.strftime("%Y-%m-%d %H:%M:%S")
-        except Exception:
-            pass
-    return None
 
+    # Support 'Z' suffix by converting it to '+00:00'
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
 
-def _minutes_between_lenient(start_iso: Any, end_iso: Any) -> Union[int, None]:
-    # gebruikt jouw bestaande calculate_duration als fallback
-    s = str(start_iso) if start_iso is not None else None
-    e = str(end_iso) if end_iso is not None else None
-    if not s or not e:
-        return None
-    # probeer robuuste parser
     try:
-        from datetime import datetime, timezone
-        fmt_s = s.replace("Z", "+00:00")
-        fmt_e = e.replace("Z", "+00:00")
-        # probeer met %z
-        for p in ("%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%d %H:%M:%S"):
-            try:
-                ds = datetime.strptime(fmt_s, p)
-                de = datetime.strptime(fmt_e, p)
-                return int((de - ds).total_seconds() // 60)
-            except Exception:
-                continue
+        dt = datetime.datetime.fromisoformat(s)
     except Exception:
-        pass
-    # fallback naar jouw helper
-    try:
-        return calculate_duration(s, e)
-    except Exception:
+        # Fallback: tolerate a space between date/time and an unhandled trailing Z
+        s2 = s.replace(" ", "T")
+        if s2.endswith("Z"):
+            s2 = s2[:-1] + "+00:00"
+        dt = datetime.datetime.fromisoformat(s2)
+
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
+
+    return dt.astimezone(datetime.timezone.utc)
+
+
+def _iso_utc(dtobj):
+    """
+    Return an ISO 8601 UTC string with 'Z' suffix (e.g. '2021-03-25T20:45:37Z').
+    """
+    if dtobj is None:
         return None
+    return (
+        dtobj.astimezone(datetime.timezone.utc)
+        .replace(tzinfo=datetime.timezone.utc)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
 
 
-def _normalize_parking_session_rows(
-    conn: sqlite3.Connection,
-    raw_rows: Union[List[Row], Dict[str, Row]],
-    *,
-    debug: bool = False
-) -> List[Row]:
+def _map_usernames_to_user_ids(conn, usernames: Set[str]) -> Dict[str, int]:
     """
-    Ondersteunt aliassen:
-      - user_id  | username | user
-      - vehicle_id | license_plate | licenseplate
-      - started | start_time | start | startDateTime
-      - stopped (alleen voor duur-berekening)
-      - duration_minutes | duration | durationMinutes
-      - payment_status | paymentStatus | status
+    Case-insensitive mapping of username -> user_id from the users table.
+    Keys in the returned dict are LOWERCASE usernames.
     """
-    lod = to_list_of_dicts(raw_rows)
+    cleaned = sorted({(u or "").strip().lower()
+                     for u in usernames if (u or "").strip()})
+    if not cleaned:
+        return {}
 
-    # Bulk resolvers (inclusief aliassen)
-    usernames = {
-        (r.get("username") or r.get("user"))
-        for r in lod if (r.get("username") or r.get("user"))
-    }
-    plates = {
-        (r.get("license_plate") or r.get("licenseplate"))
-        for r in lod if (r.get("license_plate") or r.get("licenseplate"))
-    }
-    user_map = _map_usernames_to_user_ids(conn, {u for u in usernames if u})
-    plate_map = _map_plates_to_vehicle_ids(conn, {p for p in plates if p})
+    placeholders = ",".join("?" for _ in cleaned)
+    sql = f"SELECT id, username FROM users WHERE LOWER(username) IN ({placeholders})"
+    cur = conn.execute(sql, cleaned)
 
-    out: List[Row] = []
-    for r in lod:
-        # user_id: prefer alias username/user mapping
-        uname = r.get("username") or r.get("user")
-        uid = user_map.get(uname) if uname else _to_int(r.get("user_id"))
-
-        # vehicle_id: prefer licenseplate alias mapping
-        plate = r.get("license_plate") or r.get("licenseplate")
-        vid = plate_map.get(plate) if plate else _to_int(r.get("vehicle_id"))
-
-        # started (alias)
-        started_raw = r.get("started") or r.get(
-            "start_time") or r.get("start") or r.get("startDateTime")
-        started = _parse_started_lenient(started_raw)
-
-        # duration (alias) → int; zo niet, bereken via stopped
-        dur = r.get("duration_minutes") or r.get(
-            "duration") or r.get("durationMinutes")
-        dur = _to_int(dur)
-        if dur is None:
-            stopped = r.get("stopped") or r.get("stop_time") or r.get(
-                "end_time") or r.get("end") or r.get("endDateTime")
-            dur = _minutes_between_lenient(started_raw, stopped)
-
-        # status (alias)
-        status = r.get("payment_status") or r.get(
-            "paymentStatus") or r.get("status") or "unknown"
-
-        norm = {
-            "parking_lot_id": _to_int(r.get("parking_lot_id")),
-            "vehicle_id":     _to_int(vid),
-            "user_id":        _to_int(uid),
-            "started":        started,
-            "duration_minutes": _to_int(dur),
-            "payment_status": status,
-        }
-
-        if debug:
-            missing = [k for k in SESS_FIELDS if norm.get(k) is None]
-            if missing:
-                print(
-                    f"[SESS-NORM] missing fields -> {missing} | aliases used: user='{uname}', plate='{plate}' | raw keys: {list(r.keys())}")
-
-        out.append(norm)
+    out: Dict[str, int] = {}
+    for row in cur.fetchall():
+        uid, uname = row[0], row[1]
+        if uname:
+            out[str(uname).strip().lower()] = int(uid)
     return out
 
 
-def _db_has_fk(conn: sqlite3.Connection, table: str, col: str, val: int) -> bool:
-    cur = conn.cursor()
-    cur.execute(f"SELECT 1 FROM {table} WHERE {col}=? LIMIT 1;", (val,))
-    return cur.fetchone() is not None
+def _first(*vals):
+    """Return the first non-empty value (treat '' as empty)."""
+    for v in vals:
+        if v is None:
+            continue
+        if isinstance(v, str) and v.strip() == "":
+            continue
+        return v
+    return None
 
 
-def insert_parking_sessions(
-    conn: sqlite3.Connection,
-    rows: Union[List[Row], Dict[str, Row]],
-    *,
-    debug: bool = False
-) -> Dict[str, int]:
+def insert_parking_sessions(conn, rows: Union[List[dict], Dict[str, dict]], *, debug: bool = False) -> Dict[str, int]:
     """
-    Insert parking sessions, FK-safe en idempotent.
-    - user_id via alias 'user'/'username'
-    - vehicle_id via alias 'licenseplate'/'license_plate'
-    - duration berekend uit started/stopped als nodig
-    - duplicates voorkomen via UNIQUE index + INSERT OR IGNORE
+    Batch insert parking sessions.
+
+    Resolution order for user_id:
+      1) DB lookup by username (case-insensitive)
+      2) CSV alias fallback: alias_username -> canonical_username, then DB lookup
+
+    Any user_id coming from JSON is ignored — DB autoincrements session_id.
     """
     ensure_unique_index_sessions(conn)
+    lod: List[dict] = to_list_of_dicts(rows)
 
-    rows_norm = _normalize_parking_session_rows(conn, rows, debug=debug)
-    print(rows_norm[:3])
+    # -------- Load CSV alias map ----------
+    try:
+        alias_map: Dict[str, str] = read_user_alias_csv()
+    except Exception:
+        alias_map = {}
 
-    # Prefilter: skip rijen met missende/verkeerde FKs om FOREIGN KEY errors te vermijden
-    valid_rows: List[Row] = []
-    skipped_fk = 0
-    for r in rows_norm:
-        if None in (r["user_id"], r["vehicle_id"], r["parking_lot_id"], r["started"], r["duration_minutes"]):
-            skipped_fk += 1
-            if debug:
-                print(f"[SESS-FK] skip (None field) -> {r}")
-            continue
-        if not _db_has_fk(conn, "users", "id", r["user_id"]):
-            skipped_fk += 1
-            if debug:
-                print(f"[SESS-FK] user_id not found: {r['user_id']}")
-            continue
-        if not _db_has_fk(conn, "vehicles", "id", r["vehicle_id"]):
-            skipped_fk += 1
-            if debug:
-                print(f"[SESS-FK] vehicle_id not found: {r['vehicle_id']}")
-            continue
-        if not _db_has_fk(conn, "parking_lots", "id", r["parking_lot_id"]):
-            skipped_fk += 1
-            if debug:
-                print(
-                    f"[SESS-FK] parking_lot_id not found: {r['parking_lot_id']}")
-            continue
-        valid_rows.append(r)
+    # -------- Gather session usernames ----------
+    session_usernames: Set[str] = set()
+    for r in lod:
+        uname = _first(r.get("username"), r.get("user"), r.get("user_name"))
+        if isinstance(uname, str) and uname.strip():
+            session_usernames.add(uname.strip())
 
-    rows_ok, missing = _require_fields(valid_rows, SESS_FIELDS, debug=debug)
-    data = _normalize_rows(rows_ok, SESS_FIELDS)
+    # 1st pass: resolve username directly from DB
+    username_map = _map_usernames_to_user_ids(conn, session_usernames)
 
+    # For unresolved ones: check CSV alias
+    unresolved = {u for u in session_usernames if u.lower()
+                  not in username_map}
+    canonical_usernames_needed = {
+        alias_map.get(u.lower()) for u in unresolved if alias_map.get(u.lower())
+    }
+    canonical_usernames_needed.discard(None)
+
+    canonical_map = {}
+    if canonical_usernames_needed:
+        canonical_map = _map_usernames_to_user_ids(
+            conn, canonical_usernames_needed)
+
+    # -------- Prepare rows ----------
+    prepared: List[dict] = []
+    failed_missing = 0
+
+    for r in lod:
+        uname = _first(r.get("username"), r.get("user"), r.get("user_name"))
+        uid = None
+
+        if isinstance(uname, str) and uname.strip():
+            uname_l = uname.strip().lower()
+            uid = username_map.get(uname_l)
+            if uid is None:
+                canon_l = alias_map.get(uname_l)
+                if canon_l:
+                    uid = canonical_map.get(canon_l)
+
+        # Parse datetime
+        started_raw = _first(
+            r.get("started"), r.get("start"), r.get(
+                "start_time"), r.get("startDateTime")
+        )
+        started_dt = _lenient_parse_dt(started_raw)
+        started_iso = _iso_utc(started_dt) if started_dt else None
+
+        # Duration
+        dur_raw = _first(r.get("duration_minutes"),
+                         r.get("duration"), r.get("minutes"))
+        duration_minutes = _to_int(dur_raw)
+
+        if duration_minutes is None:
+            stopped_raw = _first(r.get("stopped"), r.get(
+                "stop"), r.get("end"), r.get("end_time"))
+            stopped_dt = _lenient_parse_dt(stopped_raw)
+            if started_dt and stopped_dt:
+                duration_minutes = max(
+                    0, int((stopped_dt - started_dt).total_seconds() / 60.0))
+
+        payment_status = _first(r.get("payment_status"), r.get(
+            "paymentStatus"), r.get("status"))
+        parking_lot_id = _to_int(
+            _first(r.get("parking_lot_id"), r.get("lot_id"),
+                   r.get("parkingLotId"), r.get("parking_lot"))
+        )
+
+        # Validation
+        if None in (uid, parking_lot_id, started_iso, duration_minutes, payment_status):
+            failed_missing += 1
+            if debug:
+                print(f"[insert_sessions] missing fields for row: {r}")
+            continue
+
+        prepared.append({
+            "parking_lot_id": parking_lot_id,
+            "user_id": uid,                    # ✅ user_id determined by DB/CSV
+            "started": started_iso,            # ✅ session_id autoincrement happens automatically
+            "duration_minutes": int(duration_minutes),
+            "payment_status": str(payment_status),
+        })
+
+    data = _normalize_rows(prepared, SESSIONS_FIELDS)
     result = _batch_insert_per_row(
         conn, SQL_INSERT_SESSIONS_IGNORE, data, debug=debug)
-    # tel prefilter-skips mee als 'failed'
-    result["failed"] = result.get("failed", 0) + missing + skipped_fk
+    result["failed"] += failed_missing
     return result
+
 
 # ------------------- Wipe table ----------------------------
 
@@ -983,7 +1106,6 @@ __all__ = [
     "insert_vehicles",
     "insert_payments",
     "insert_reservations",
-    # helpers
     "calculate_duration",
     "extract_userid_to_email",
     "map_emails_to_db_user_ids",
@@ -1006,9 +1128,28 @@ conn = get_connection()
 # print("reservations:", insert_reservations(
 #     conn, reservations, users_source=users, debug=True))
 
-parking_sessions = load_data("v1/data/pdata/p1-sessions.json")
-print("sessions:", insert_parking_sessions(
-    conn, parking_sessions, debug=False))
+wipe_table(conn, "sessions")
 
-payments = load_data("v1/data/payments2.json")
-print("payments:", insert_payments(conn, payments, debug=True))
+all_sessions = []
+
+for i in range(1, 1501):
+    file_path = f"v1/data/pdata/p{i}-sessions.json"
+    try:
+        data = load_data(file_path)
+        # Voeg ALLE values toe, dict -> list
+        all_sessions.extend(data.values())
+    except FileNotFoundError:
+        # Veilig overslaan als een bestand ontbreekt
+        pass
+
+batch_size = 200000
+for start in range(0, len(all_sessions), batch_size):
+    batch = all_sessions[start:start + batch_size]
+    result = insert_parking_sessions(conn, batch, debug=True)
+    print(
+        f"In batch {start // batch_size + 1}: inserted={result['inserted']}, failed={result['failed']}")
+
+    # delete_user_alias_csv()
+
+    # payments = load_data("v1/data/payments2.json")
+    # print("payments:", insert_payments(conn, payments, debug=True))
