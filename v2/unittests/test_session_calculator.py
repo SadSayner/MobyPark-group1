@@ -32,6 +32,7 @@ class TestPaymentUtils(unittest.TestCase):
         data = {"started": start, "stopped": stop}
         result = calculate_price(parkinglot, "sid1", data)
         self.assertEqual(result[0], 2.5 * 4)
+        self.assertEqual(result[1], 4)
         self.assertEqual(result[2], 0)
 
     def test_calculate_price_exceeds_daytariff(self):
