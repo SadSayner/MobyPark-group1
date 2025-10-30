@@ -55,7 +55,12 @@ def start_session(lid: str, data: Dict[str, Any] = Body(...), user = Depends(req
     if "licenseplate" not in data:
         raise HTTPException(400, detail={"error": "Require field missing", "field": "licenseplate"})
     sessions = load_json(f"data/pdata/p{lid}-sessions.json") or {}
-    filtered = {k: v for k, v in sessions.items() if v.get("licenseplate") == data["licenseplate"] and not v.get("stopped")}
+    filtered = {}
+    for k, v in sessions.items():
+        lp = v.get("licenseplate")
+        stopped = v.get("stopped")
+        if lp == data["licenseplate"] and not stopped:
+            filtered[k] = v
     if filtered:
         raise HTTPException(400, detail="Cannot start a session when another session for this licenseplate is already started.")
     session = {"licenseplate": data["licenseplate"], "started": now_str(), "stopped": None, "user": user["username"]}
@@ -69,7 +74,12 @@ def stop_session(lid: str, data: Dict[str, Any] = Body(...), user = Depends(requ
     if "licenseplate" not in data:
         raise HTTPException(400, detail={"error": "Require field missing", "field": "licenseplate"})
     sessions = load_json(f"data/pdata/p{lid}-sessions.json") or {}
-    filtered = {k: v for k, v in sessions.items() if v.get("licenseplate") == data["licenseplate"] and not v.get("stopped")}
+    filtered = {}
+    for k, v in sessions.items():
+        lp = v.get("licenseplate")
+        stopped = v.get("stopped")
+        if lp == data["licenseplate"] and not stopped:
+            filtered[k] = v
     if not filtered:
         raise HTTPException(400, detail="Cannot stop a session when there is no active session for this licenseplate.")
     sid = next(iter(filtered))
@@ -80,9 +90,14 @@ def stop_session(lid: str, data: Dict[str, Any] = Body(...), user = Depends(requ
 @router.get("/parking-lots/{lid}/sessions")
 def list_sessions(lid: str, user = Depends(require_session)):
     sessions = load_json(f"data/pdata/p{lid}-sessions.json") or {}
-    if user.get("role") == "ADMIN":
+    if user["role"] == "ADMIN":
         return sessions
-    return {sid: s for sid, s in sessions.items() if s.get("user") == user["username"]}
+    
+    user_sessions = {}
+    for sid, s in sessions.items():
+        if s["user"] == user["username"]:
+            user_sessions[sid] = s
+    return user_sessions
 
 @router.get("/parking-lots/{lid}/sessions/{sid}")
 def get_session_detail(lid: str, sid: str, user = Depends(require_session)):
@@ -90,7 +105,7 @@ def get_session_detail(lid: str, sid: str, user = Depends(require_session)):
     if sid not in sessions:
         raise HTTPException(404, detail="Session not found")
     s = sessions[sid]
-    if user.get("role") != "ADMIN" and s.get("user") != user["username"]:
+    if user["role"] != "ADMIN" and s["user"] != user["username"]:
         raise HTTPException(403, detail="Access denied")
     return s
 

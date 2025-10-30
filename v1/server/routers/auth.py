@@ -4,9 +4,12 @@ from pydantic import BaseModel
 from typing import Optional, Dict, Any
 import hashlib, uuid
 
+from dbm import sqlite3
 from storage_utils import load_json, save_user_data
 from session_manager import add_session, remove_session, get_session
 from v1.server.deps import require_session
+from v1.Database.database_logic import get_connection
+
 
 router = APIRouter()
 
@@ -23,20 +26,28 @@ class LoginIn(BaseModel):
     username: str
     password: str
 
+def get_db():
+    con = get_connection()
+    try:
+        yield con
+    finally:
+        try:
+            con.close()
+        except Exception:
+            pass    
+
 @router.post("/register")
-def register(payload: RegisterIn):
-    users = load_json("data/users.json") or [] #replace with database
-    if not isinstance(users, list): #check of users een list is
-        users = []
-    if any(u.get("username") == payload.username for u in users): #check of de username al bestaat
-        raise HTTPException(409, detail="Username already taken")
-    users.append({
-        "username": payload.username,
-        "password": md5(payload.password),
-        "name": payload.name,
-        "role": payload.role or "USER",
-    })
-    save_user_data(users)
+def register(payload: RegisterIn, con: sqlite3.Connection = Depends(get_db)):
+    # check existing user
+    cur = con.execute("SELECT 1 FROM users WHERE username = ?", (payload.username,))
+    if cur.fetchone():
+        raise HTTPException(status_code=409, detail="Username already taken")
+    # insert user
+    con.execute(
+        "INSERT INTO users (username, password, name, role) VALUES (?, ?, ?, ?)",
+        (payload.username, hasher(payload.password), payload.name, (payload.role or "USER").upper()),
+    )
+    con.commit()
     return {"message": "User created"}
 
 @router.post("/login")
