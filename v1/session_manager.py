@@ -1,10 +1,20 @@
-sessions = {}
+from fastapi.params import Depends
+from v1.Database.database_logic import get_connection
 
 def add_session(token, user):
-    sessions[token] = user
+    with get_connection() as con:
+        con.execute("INSERT INTO auth_sessions (token, user_id) VALUES (?, ?)", (token, user["id"]))
+        con.commit()
 
 def remove_session(token):
-    return sessions.pop(token, None)
+    with get_connection() as con:
+        con.execute("DELETE FROM auth_sessions WHERE token = ?", (token,))
+        con.commit()
 
-def get_session(token):
-    return sessions.get(token)
+def get_session(token, con=Depends(get_connection)):
+    with con:
+        cur = con.execute("SELECT token, user_id FROM auth_sessions WHERE token = ?", (token,))
+        return cur.fetchone()
+    return None
+
+    

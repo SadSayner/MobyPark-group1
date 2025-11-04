@@ -120,6 +120,19 @@ def create_database(db_path="v1/Database/MobyPark.db"):
         );
         """)
 
+        # Authorization sessions (login tokens)
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS auth_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            token TEXT NOT NULL UNIQUE,
+            user_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            expires_at TEXT,
+            last_active TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        """)
+
         conn.commit()
         print(f"Database en tabellen aangemaakt in {db_path}")
 
