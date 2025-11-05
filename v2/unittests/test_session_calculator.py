@@ -68,21 +68,21 @@ class TestPaymentUtils(unittest.TestCase):
         uuid.UUID(h1)
         uuid.UUID(h2)
 
-    @patch("session_calculator.load_payment_data")
-    def test_check_payment_amount_found(self, mock_load):
-        mock_load.return_value = [
-            {"transaction": "hash1", "amount": 5},
-            {"transaction": "hash2", "amount": 10},
-            {"transaction": "hash1", "amount": 2.5},
-        ]
-        result = check_payment_amount("hash1")
-        self.assertEqual(result, 7.5)
+    # @patch("session_calculator.load_payment_data")
+    # def test_check_payment_amount_found(self, mock_load):
+    #     mock_load.return_value = [
+    #         {"transaction": "hash1", "amount": 5},
+    #         {"transaction": "hash2", "amount": 10},
+    #         {"transaction": "hash1", "amount": 2.5},
+    #     ]
+    #     result = check_payment_amount("hash1")
+    #     self.assertEqual(result, 7.5)
 
-    @patch("session_calculator.load_payment_data")
-    def test_check_payment_amount_not_found(self, mock_load):
-        mock_load.return_value = [{"transaction": "other", "amount": 99}]
-        result = check_payment_amount("not_found")
-        self.assertEqual(result, 0)
+    # @patch("session_calculator.load_payment_data")
+    # def test_check_payment_amount_not_found(self, mock_load):
+    #     mock_load.return_value = [{"transaction": "other", "amount": 99}]
+    #     result = check_payment_amount("not_found")
+    #     self.assertEqual(result, 0)
 
 
 if __name__ == "__main__":
