@@ -2,14 +2,32 @@
 from fastapi import APIRouter, HTTPException, Body, Depends
 from typing import Dict, Any
 from datetime import datetime
+import sqlite3
 
 from storage_utils import load_parking_lot_data, save_parking_lot_data, load_json, save_data
 from v1.server.deps import require_session, require_admin
+from v1.Database.database_logic import get_connection
 
 router = APIRouter()
 
 def now_str() -> str:
     return datetime.now().strftime("%d-%m-%Y %H:%M:%S")
+
+def row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
+    if row is None:
+        return {}
+    return {k: row[k] for k in row.keys()}
+
+
+def get_db():
+    con = get_connection()
+    try:
+        yield con
+    finally:
+        try:
+            con.close()
+        except Exception:
+            pass
 
 @router.post("/parking-lots")
 def create_parking_lot(data: Dict[str, Any] = Body(...), admin = Depends(require_admin)):
@@ -18,6 +36,32 @@ def create_parking_lot(data: Dict[str, Any] = Body(...), admin = Depends(require
     parking_lots[new_lid] = data
     save_parking_lot_data(parking_lots)
     return {"message": f"Parking lot saved under ID: {new_lid}", "id": new_lid}
+
+@router.post("/parking-lots")
+def create_parking_lot(data: Dict[str, Any] = Body(...), admin = Depends(require_admin),
+                       con: sqlite3.Connection = Depends(get_db)):
+    # map allowed fields; missing fields get NULL / defaults
+    cur = con.execute(
+        """
+        INSERT INTO parking_lots (name, location, address, capacity, reserved, tariff, daytariff, created_at, lat, lng)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            data.get("name"),
+            data.get("location"),
+            data.get("address"),
+            data.get("capacity"),
+            int(bool(data.get("reserved"))) if "reserved" in data else 0,
+            data.get("tariff"),
+            data.get("daytariff"),
+            now_str(),
+            data.get("lat"),
+            data.get("lng"),
+        ),
+    )
+    con.commit()
+    new_id = cur.lastrowid
+    return {"message": f"Parking lot saved under ID: {new_id}", "id": new_id}
 
 #Body(...) betekent dat de body verplicht is
 @router.put("/parking-lots/{lid}")
