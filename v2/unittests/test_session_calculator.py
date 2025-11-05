@@ -4,12 +4,7 @@ from datetime import datetime, timedelta
 from hashlib import md5
 import uuid
 
-from .session_calculator import (
-    calculate_price,
-    generate_payment_hash,
-    generate_transaction_validation_hash,
-    check_payment_amount
-)
+from session_calculator import *
 
 
 class TestPaymentUtils(unittest.TestCase):
