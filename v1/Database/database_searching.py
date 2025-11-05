@@ -7,6 +7,5 @@ from storage_utils import *  # noqa
 from Models.user_model import *  # noqa
 
 connection = get_connection()
-
-users = load_data("v1/data/users.json")
-print(users[3417])
+payments = load_data("v1/data/payments.json")
+save_data("v1/data/payments2.json", payments[0: 10000])
