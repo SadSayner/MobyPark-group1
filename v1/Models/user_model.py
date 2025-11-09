@@ -47,21 +47,6 @@ class User_model:
         return f"{line}\n{header}\n{line}\n{self._row()}\n{line}"
 
     @staticmethod
-    def from_dict(data):
-        return User_model(
-            id=data['id'],
-            username=data['username'],
-            password=data['password'],
-            name=data['name'],
-            email=data['email'],
-            phone=data['phone'],
-            role=data['role'],
-            created_at=data['created_at'],
-            birth_year=data['birth_year'],
-            active=data['active']
-        )
-
-    @staticmethod
     def format_table(objects):
         line = User_model._line()
         header = User_model._header_row()
