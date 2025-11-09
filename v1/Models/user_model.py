@@ -55,3 +55,21 @@ class User_model:
             return f"{line}\n{header}\n{line}\n{line}"
         rows = "\n".join(o._row() for o in objects)
         return f"{line}\n{header}\n{line}\n{rows}\n{line}"
+
+    @staticmethod
+    def from_dict(**content: dict):
+        try:
+            return User_model(
+                id=content.get("id"),
+                username=content.get("username"),
+                password=content.get("password"),
+                name=content.get("name"),
+                email=content.get("email"),
+                phone=content.get("phone"),
+                role=content.get("role"),
+                created_at=content.get("created_at"),
+                birth_year=content.get("birth_year"),
+                active=content.get("active"),
+            )
+        except KeyError as e:
+            raise ValueError(f"Missing key in content dict: {e}")
