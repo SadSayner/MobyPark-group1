@@ -1097,8 +1097,8 @@ def fill_database():
 
     conn = get_connection()
 
-    # parking_lots = load_data("v1/data/parking-lots.json")
-    # print("lots:", insert_parking_lots(conn, parking_lots, debug=True))
+    parking_lots = load_data("v1/data/parking-lots.json")
+    print("lots:", insert_parking_lots(conn, parking_lots, debug=True))
 
     users = load_data("v1/data/users.json")
     print("users:", insert_users(conn, users, debug=True))
