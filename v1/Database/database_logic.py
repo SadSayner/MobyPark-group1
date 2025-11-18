@@ -29,6 +29,15 @@ def get_connection(db_path: str = None) -> sqlite3.Connection:
     con.execute("PRAGMA foreign_keys = ON;")
     return con
 
+def get_db():
+    con = get_connection()
+    try:
+        yield con
+    finally:
+        try:
+            con.close()
+        except Exception:
+            pass
 
 def record_exists(con: sqlite3.Connection, table: str, where: dict) -> bool:
     """

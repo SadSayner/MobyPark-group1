@@ -6,7 +6,7 @@ import sqlite3
 
 from storage_utils import load_parking_lot_data, save_parking_lot_data, load_json, save_data
 from v1.server.deps import require_session, require_admin
-from v1.Database.database_logic import get_connection
+from v1.Database.database_logic import get_db
 
 router = APIRouter()
 
@@ -18,24 +18,29 @@ def row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
         return {}
     return {k: row[k] for k in row.keys()}
 
-
-def get_db():
-    con = get_connection()
-    try:
-        yield con
-    finally:
-        try:
-            con.close()
-        except Exception:
-            pass
-
 @router.post("/parking-lots")
-def create_parking_lot(data: Dict[str, Any] = Body(...), admin = Depends(require_admin)):
-    parking_lots = load_parking_lot_data()
-    new_lid = str(len(parking_lots) + 1)
-    parking_lots[new_lid] = data
-    save_parking_lot_data(parking_lots)
-    return {"message": f"Parking lot saved under ID: {new_lid}", "id": new_lid}
+def create_parking_lot(data: Dict[str, Any] = Body(...), admin = Depends(require_admin), con: sqlite3.Connection = Depends(get_db)):
+    cur = con.execute(
+        """
+        INSERT INTO parking_lots (name, location, address, capacity, reserved, tariff, daytariff, created_at, lat, lng)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            data.get("name"),
+            data.get("location"),
+            data.get("address"),
+            data.get("capacity"),
+            int(bool(data.get("reserved"))) if "reserved" in data else 0,
+            data.get("tariff"),
+            data.get("daytariff"),
+            now_str(),
+            data.get("lat"),
+            data.get("lng"),
+        ),
+    )
+    con.commit()
+    new_id = cur.lastrowid
+    return {"message": f"Parking lot saved under ID: {new_id}", "id": new_id}
 
 @router.post("/parking-lots")
 def create_parking_lot(data: Dict[str, Any] = Body(...), admin = Depends(require_admin),
@@ -65,99 +70,126 @@ def create_parking_lot(data: Dict[str, Any] = Body(...), admin = Depends(require
 
 #Body(...) betekent dat de body verplicht is
 @router.put("/parking-lots/{lid}")
-def update_parking_lot(lid: str, data: Dict[str, Any] = Body(...), admin = Depends(require_admin)):
-    parking_lots = load_parking_lot_data()
-    if lid not in parking_lots:
+def update_parking_lot(lid: str, data: Dict[str, Any] = Body(...), admin = Depends(require_admin), con: sqlite3.Connection = Depends(get_db)):
+    cur = con.execute("SELECT * FROM parking_lots WHERE id = ?", (lid,))
+    parking_lot = cur.fetchone()
+    if parking_lot is None:
         raise HTTPException(404, detail="Parking lot not found")
-    parking_lots[lid] = data
-    save_parking_lot_data(parking_lots)
+    con.execute(
+        """
+        UPDATE parking_lots SET name = ?, location = ?, address = ?, capacity = ?, reserved = ?, tariff = ?, daytariff = ?, lat = ?, lng = ?
+        WHERE id = ?
+        """,
+        (
+            data.get("name", parking_lot["name"]),
+            data.get("location", parking_lot["location"]),
+            data.get("address", parking_lot["address"]),
+            data.get("capacity", parking_lot["capacity"]),
+            int(bool(data.get("reserved", parking_lot["reserved"]))) if "reserved" in data else 0,
+            data.get("tariff", parking_lot["tariff"]),
+            data.get("daytariff", parking_lot["daytariff"]),
+            data.get("lat", parking_lot["lat"]),
+            data.get("lng", parking_lot["lng"]),
+            lid
+        ),
+    )
+    con.commit()
     return {"message": "Parking lot modified"}
 
 @router.delete("/parking-lots/{lid}")
-def delete_parking_lot(lid: str, admin = Depends(require_admin)):
-    parking_lots = load_parking_lot_data()
-    if lid not in parking_lots:
+def delete_parking_lot(lid: str, admin = Depends(require_admin), con: sqlite3.Connection = Depends(get_db)):
+    cur = con.execute("SELECT * FROM parking_lots WHERE id = ?", (lid,))
+    parking_lot = cur.fetchone()
+    if parking_lot is None:
         raise HTTPException(404, detail="Parking lot not found")
-    del parking_lots[lid]
-    save_parking_lot_data(parking_lots)
+    con.execute("DELETE FROM parking_lots WHERE id = ?", (lid,))
+    con.commit()
     return {"message": "Parking lot deleted"}
 
 @router.get("/parking-lots")
-def list_parking_lots():
-    return load_parking_lot_data()
+def list_parking_lots(con: sqlite3.Connection = Depends(get_db)):
+    cur = con.execute("SELECT * FROM parking_lots")
+    rows = cur.fetchall()
+    return [row_to_dict(row) for row in rows]
 
 @router.get("/parking-lots/{lid}")
-def get_parking_lot(lid: str):
-    parking_lots = load_parking_lot_data()
-    if lid not in parking_lots:
+def get_parking_lot(lid: str, con: sqlite3.Connection = Depends(get_db)):
+    cur = con.execute("SELECT * FROM parking_lots WHERE id = ?", (lid,))
+    parking_lot = cur.fetchone()
+    if parking_lot is None:
         raise HTTPException(404, detail="Parking lot not found")
-    return parking_lots[lid]
+    return row_to_dict(parking_lot)
 
 # Sessions for parking lots
 @router.post("/parking-lots/{lid}/sessions/start")
-def start_session(lid: str, data: Dict[str, Any] = Body(...), user = Depends(require_session)):
+def start_session(lid: str, data: Dict[str, Any] = Body(...), user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
     if "licenseplate" not in data:
         raise HTTPException(400, detail={"error": "Require field missing", "field": "licenseplate"})
-    sessions = load_json(f"data/pdata/p{lid}-sessions.json") or {}
+    cur = con.execute("SELECT * FROM parking_sessions WHERE parking_lot_id = ?", (lid,))
+    sessions = cur.fetchall()
     filtered = {}
-    for k, v in sessions.items():
+    for v in sessions:
         lp = v.get("licenseplate")
         stopped = v.get("stopped")
         if lp == data["licenseplate"] and not stopped:
-            filtered[k] = v
+            filtered[v["id"]] = v
     if filtered:
         raise HTTPException(400, detail="Cannot start a session when another session for this licenseplate is already started.")
     session = {"licenseplate": data["licenseplate"], "started": now_str(), "stopped": None, "user": user["username"]}
-    sid = str(len(sessions) + 1)
-    sessions[sid] = session
-    save_data(f"data/pdata/p{lid}-sessions.json", sessions)
-    return {"message": f"Session started for: {data['licenseplate']}", "id": sid, "session": session}
+    cur = con.execute("INSERT INTO parking_sessions (licenseplate, started, stopped, user, parking_lot_id) VALUES (?, ?, ?, ?, ?)",
+                      (session["licenseplate"], session["started"], session["stopped"], session["user"], lid))
+    con.commit()
+    session["id"] = cur.lastrowid
+    return {"message": f"Session started for: {data['licenseplate']}", "id": session["id"], "session": session}
 
 @router.post("/parking-lots/{lid}/sessions/stop")
-def stop_session(lid: str, data: Dict[str, Any] = Body(...), user = Depends(require_session)):
+def stop_session(lid: str, data: Dict[str, Any] = Body(...), user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
     if "licenseplate" not in data:
         raise HTTPException(400, detail={"error": "Require field missing", "field": "licenseplate"})
-    sessions = load_json(f"data/pdata/p{lid}-sessions.json") or {}
+    cur = con.execute("SELECT * FROM parking_sessions WHERE parking_lot_id = ?", (lid,))
+    sessions = cur.fetchall()
     filtered = {}
-    for k, v in sessions.items():
+    for v in sessions:
         lp = v.get("licenseplate")
         stopped = v.get("stopped")
         if lp == data["licenseplate"] and not stopped:
-            filtered[k] = v
+            filtered[v["id"]] = v
     if not filtered:
         raise HTTPException(400, detail="Cannot stop a session when there is no active session for this licenseplate.")
     sid = next(iter(filtered))
-    sessions[sid]["stopped"] = now_str()
-    save_data(f"data/pdata/p{lid}-sessions.json", sessions)
+    cur.execute("UPDATE parking_sessions SET stopped = ? WHERE id = ?", (now_str(), sid))
+    con.commit()
     return {"message": f"Session stopped for: {data['licenseplate']}", "id": sid, "session": sessions[sid]}
 
 @router.get("/parking-lots/{lid}/sessions")
-def list_sessions(lid: str, user = Depends(require_session)):
-    sessions = load_json(f"data/pdata/p{lid}-sessions.json") or {}
+def list_sessions(lid: str, user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
+    cur = con.execute("SELECT * FROM parking_sessions WHERE parking_lot_id = ?", (lid,))
+    sessions = cur.fetchall()
     if user["role"] == "ADMIN":
         return sessions
     
     user_sessions = {}
-    for sid, s in sessions.items():
+    for s in sessions:
         if s["user"] == user["username"]:
-            user_sessions[sid] = s
+            user_sessions[s["id"]] = s
     return user_sessions
 
 @router.get("/parking-lots/{lid}/sessions/{sid}")
-def get_session_detail(lid: str, sid: str, user = Depends(require_session)):
-    sessions = load_json(f"data/pdata/p{lid}-sessions.json") or {}
-    if sid not in sessions:
+def get_session_detail(lid: str, sid: str, user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
+    cur = con.execute("SELECT * FROM parking_sessions WHERE parking_lot_id = ? AND id = ?", (lid, sid))
+    session = cur.fetchone()
+    if session is None:
         raise HTTPException(404, detail="Session not found")
-    s = sessions[sid]
-    if user["role"] != "ADMIN" and s["user"] != user["username"]:
+    if user["role"] != "ADMIN" and session["user"] != user["username"]:
         raise HTTPException(403, detail="Access denied")
-    return s
+    return session
 
 @router.delete("/parking-lots/{lid}/sessions/{sid}")
-def delete_session(lid: str, sid: str, admin = Depends(require_admin)):
-    sessions = load_json(f"data/pdata/p{lid}-sessions.json") or {}
-    if sid not in sessions:
+def delete_session(lid: str, sid: str, admin = Depends(require_admin), con: sqlite3.Connection = Depends(get_db)):
+    cur = con.execute("SELECT * FROM parking_sessions WHERE parking_lot_id = ? AND id = ?", (lid, sid))
+    session = cur.fetchone()
+    if session is None:
         raise HTTPException(404, detail="Session not found")
-    del sessions[sid]
-    save_data(f"data/pdata/p{lid}-sessions.json", sessions)
+    cur.execute("DELETE FROM parking_sessions WHERE id = ?", (sid,))
+    con.commit()
     return {"message": "Session deleted"}

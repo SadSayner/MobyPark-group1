@@ -8,7 +8,7 @@ from dbm import sqlite3
 from storage_utils import load_json, save_user_data
 from session_manager import add_session, remove_session, get_session
 from v1.server.deps import require_session
-from v1.Database.database_logic import get_connection
+from v1.Database.database_logic import get_db
 from v1.server.validation.validation import is_valid_username, is_valid_password, is_valid_email, is_valid_phone, is_valid_role
 
 
@@ -25,17 +25,7 @@ class RegisterIn(BaseModel):
 
 class LoginIn(BaseModel):
     username: str
-    password: str
-
-def get_db():
-    con = get_connection()
-    try:
-        yield con
-    finally:
-        try:
-            con.close()
-        except Exception:
-            pass    
+    password: str   
 
 @router.post("/register")
 def register(payload: RegisterIn, con: sqlite3.Connection = Depends(get_db)):
