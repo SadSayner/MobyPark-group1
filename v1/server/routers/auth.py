@@ -4,12 +4,12 @@ from pydantic import BaseModel
 from typing import Optional, Dict, Any
 import hashlib, uuid
 
-from dbm import sqlite3
+import sqlite3
 from storage_utils import load_json, save_user_data
 from session_manager import add_session, remove_session, get_session
-from v1.server.deps import require_session
-from v1.Database.database_logic import get_db
-from v1.server.validation.validation import is_valid_username, is_valid_password, is_valid_email, is_valid_phone, is_valid_role
+from server.deps import require_session
+from Database.database_logic import get_db, get_users_by_username, update_user
+from server.validation.validation import is_valid_username, is_valid_password, is_valid_email, is_valid_phone, is_valid_role
 
 
 router = APIRouter()
@@ -29,9 +29,12 @@ class LoginIn(BaseModel):
 
 @router.post("/register")
 def register(payload: RegisterIn, con: sqlite3.Connection = Depends(get_db)):
-    cur = con.execute("SELECT 1 FROM users WHERE username = ?", (payload.username,))
-    if cur.fetchone():
+    # Check if username already exists
+    existing_user = get_users_by_username(con, payload.username)
+    if existing_user:
         raise HTTPException(status_code=409, detail="Username already taken")
+
+    # Direct insert (database insert_user function requires more fields we don't have yet)
     con.execute(
         "INSERT INTO users (username, password, name, role) VALUES (?, ?, ?, ?)",
         (payload.username, hasher(payload.password), payload.name, (payload.role or "USER").upper()),
@@ -41,14 +44,12 @@ def register(payload: RegisterIn, con: sqlite3.Connection = Depends(get_db)):
 
 @router.post("/login")
 def login(payload: LoginIn, con: sqlite3.Connection = Depends(get_db)):
-    cur = con.execute(
-        "SELECT username, name, role From users WHERE username = ? AND password = ?"
-        , (payload.username, hasher(payload.password))
-    )
-    user = cur.fetchone()
-    if user:
+    # Get user by username
+    user = get_users_by_username(con, payload.username)
+
+    if user and user.password == hasher(payload.password):
         session_token = str(uuid.uuid4())
-        add_session(session_token, {"username": user[0], "name": user[1], "role": user[2]})
+        add_session(session_token, {"username": user.username, "name": user.name, "role": user.role})
         return {"message": "Login successful", "session_token": session_token}
     raise HTTPException(status_code=401, detail="Invalid username or password")
 
@@ -58,11 +59,10 @@ def profile(user = Depends(require_session), con: sqlite3.Connection = Depends(g
     Return fresh profile data from the database (no password).
     Uses the session 'user' to identify which DB record to read.
     """
-    cur = con.execute("SELECT username, name, role FROM users WHERE username = ?", (user["username"],))
-    row = cur.fetchone()
-    if not row:
+    db_user = get_users_by_username(con, user["username"])
+    if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
-    return {"username": row[0], "name": row[1], "role": row[2]}
+    return {"username": db_user.username, "name": db_user.name, "role": db_user.role}
 
 class UpdateProfileIn(BaseModel):
     name: Optional[str] = None
@@ -72,22 +72,33 @@ class UpdateProfileIn(BaseModel):
     phone: Optional[str] = None
     
 @router.put("/profile")
-def update_profile(updates: UpdateProfileIn, user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)): #Depends zorgt ervoor dat de require_session functie wordt aangeroepen voordat de variable 'user' kan worden gebruikt
-    cur = con.execute("SELECT username, name, email, phone, role FROM users WHERE username = ?", (user["username"],))
-    row = cur.fetchone()
-    if not row:
+def update_profile(updates: UpdateProfileIn, user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
+    """
+    Update user profile using database function.
+    """
+    # Check if user exists
+    db_user = get_users_by_username(con, user["username"])
+    if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    # Build updates dictionary
+    update_dict = {}
     if updates.name is not None:
-        cur.execute("UPDATE users SET name = ? WHERE username = ?", (updates.name, user["username"]))
+        update_dict["name"] = updates.name
     if updates.password:
-        cur.execute("UPDATE users SET password = ? WHERE username = ?", (hasher(updates.password), user["username"]))
+        update_dict["password"] = hasher(updates.password)
     if updates.role and user.get("role") == "ADMIN":
-        cur.execute("UPDATE users SET role = ? WHERE username = ?", (updates.role, user["username"]))
+        update_dict["role"] = updates.role
     if updates.email is not None:
-        cur.execute("UPDATE users SET email = ? WHERE username = ?", (updates.email, user["username"]))
+        update_dict["email"] = updates.email
     if updates.phone is not None:
-        cur.execute("UPDATE users SET phone = ? WHERE username = ?", (updates.phone, user["username"]))
-    con.commit()
+        update_dict["phone"] = updates.phone
+
+    # Use database function to update
+    success = update_user(con, user["username"], update_dict)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to update user")
+
     return {"message": "User updated successfully"}
 
 @router.get("/logout")

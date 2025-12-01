@@ -2,7 +2,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import auth, parking_lots, reservations, vehicles, payments
+from .routers import auth, parking_lots, reservations, vehicles, payments
 
 app = FastAPI(title="Parking API")
 

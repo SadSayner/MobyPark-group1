@@ -4,8 +4,8 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 import sqlite3
 
-from v1.server.deps import require_session, require_admin
-from v1.Database.database_logic import get_db
+from server.deps import require_session, require_admin
+from Database.database_logic import get_db, get_user_id_by_username, update_vehicle, delete_vehicle
 
 router = APIRouter()
 
@@ -28,12 +28,10 @@ def create_vehicle(payload: VehicleIn, user = Depends(require_session), con: sql
     # basic validation
     if not payload.name or not payload.license_plate:
         raise HTTPException(400, detail={"error": "Require field missing", "field": "name/license_plate"})
-    # resolve user id
-    cur = con.execute("SELECT id FROM users WHERE username = ?", (user.get("username"),))
-    urow = cur.fetchone()
-    if not urow:
+    # Use database function to get user ID
+    uid = get_user_id_by_username(con, user.get("username"))
+    if not uid:
         raise HTTPException(400, detail="User not found")
-    uid = urow["id"]
 
     lid = _mk_lid(payload.license_plate)
     # check duplicate for this user
@@ -66,14 +64,13 @@ def create_vehicle(payload: VehicleIn, user = Depends(require_session), con: sql
 
 
 @router.put("/vehicles/{lid}")
-def update_vehicle(lid: str, payload: VehicleIn, user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
+def update_vehicle_route(lid: str, payload: VehicleIn, user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
     if not payload.name:
         raise HTTPException(400, detail={"error": "Require field missing", "field": "name"})
-    cur = con.execute("SELECT id FROM users WHERE username = ?", (user.get("username"),))
-    urow = cur.fetchone()
-    if not urow:
+    # Use database function to get user ID
+    uid = get_user_id_by_username(con, user.get("username"))
+    if not uid:
         raise HTTPException(400, detail="User not found")
-    uid = urow["id"]
 
     norm_lid = _mk_lid(lid)
     row = con.execute(
@@ -98,24 +95,26 @@ def update_vehicle(lid: str, payload: VehicleIn, user = Depends(require_session)
         vehicle = {"id": vid, "licenseplate": license_plate, "name": payload.name, "created_at": now, "updated_at": now}
         return {"status": "Success", "vehicle": vehicle}
 
-    # update existing
-    con.execute(
-        "UPDATE vehicles SET name = ?, updated_at = ? WHERE id = ?",
-        (payload.name, now, row["id"]),
-    )
-    con.commit()
+    # Use database function to update existing vehicle
+    updates = {
+        "name": payload.name,
+        "updated_at": now,
+    }
+    success = update_vehicle(con, row["id"], updates)
+    if not success:
+        raise HTTPException(500, detail="Failed to update vehicle")
+
     updated = con.execute("SELECT * FROM vehicles WHERE id = ?", (row["id"],)).fetchone()
     v = dict(updated)
     return {"status": "Success", "vehicle": {"id": v.get("id"), "licenseplate": v.get("license_plate"), "name": v.get("name"), "created_at": v.get("created_at"), "updated_at": v.get("updated_at") }}
 
 
 @router.delete("/vehicles/{lid}")
-def delete_vehicle(lid: str, user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
-    cur = con.execute("SELECT id FROM users WHERE username = ?", (user.get("username"),))
-    urow = cur.fetchone()
-    if not urow:
+def delete_vehicle_route(lid: str, user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
+    # Use database function to get user ID
+    uid = get_user_id_by_username(con, user.get("username"))
+    if not uid:
         raise HTTPException(400, detail="User not found")
-    uid = urow["id"]
 
     norm_lid = _mk_lid(lid)
     row = con.execute(
@@ -124,18 +123,21 @@ def delete_vehicle(lid: str, user = Depends(require_session), con: sqlite3.Conne
     ).fetchone()
     if not row:
         raise HTTPException(404, detail="Vehicle not found")
-    con.execute("DELETE FROM vehicles WHERE id = ?", (row["id"],))
-    con.commit()
+
+    # Use database function to delete vehicle
+    success = delete_vehicle(con, row["id"])
+    if not success:
+        raise HTTPException(500, detail="Failed to delete vehicle")
+
     return {"status": "Deleted"}
 
 
 @router.get("/vehicles")
 def list_own_vehicles(user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
-    cur = con.execute("SELECT id FROM users WHERE username = ?", (user.get("username"),))
-    urow = cur.fetchone()
-    if not urow:
+    # Use database function to get user ID
+    uid = get_user_id_by_username(con, user.get("username"))
+    if not uid:
         return {}
-    uid = urow["id"]
     rows = con.execute("SELECT * FROM vehicles WHERE user_id = ? ORDER BY created_at DESC", (uid,)).fetchall()
     result: Dict[str, Any] = {}
     for r in rows:
@@ -147,11 +149,10 @@ def list_own_vehicles(user = Depends(require_session), con: sqlite3.Connection =
 
 @router.get("/vehicles/{user_name}")
 def list_user_vehicles(user_name: str, admin = Depends(require_admin), con: sqlite3.Connection = Depends(get_db)):
-    cur = con.execute("SELECT id FROM users WHERE username = ?", (user_name,))
-    urow = cur.fetchone()
-    if not urow:
+    # Use database function to get user ID
+    uid = get_user_id_by_username(con, user_name)
+    if not uid:
         raise HTTPException(404, detail="User not found")
-    uid = urow["id"]
     rows = con.execute("SELECT * FROM vehicles WHERE user_id = ? ORDER BY created_at DESC", (uid,)).fetchall()
     result: Dict[str, Any] = {}
     for r in rows:
@@ -165,11 +166,10 @@ def list_user_vehicles(user_name: str, admin = Depends(require_admin), con: sqli
 def vehicle_entry(lid: str, data: Dict[str, Any] = Body(...), user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
     if "parkinglot" not in data:
         raise HTTPException(400, detail={"error": "Require field missing", "field": "parkinglot"})
-    cur = con.execute("SELECT id FROM users WHERE username = ?", (user.get("username"),))
-    urow = cur.fetchone()
-    if not urow:
+    # Use database function to get user ID
+    uid = get_user_id_by_username(con, user.get("username"))
+    if not uid:
         raise HTTPException(400, detail="User not found")
-    uid = urow["id"]
 
     norm_lid = _mk_lid(lid)
     vrow = con.execute("SELECT * FROM vehicles WHERE user_id = ? AND lower(replace(license_plate,'-','')) = ?", (uid, norm_lid)).fetchone()
@@ -182,11 +182,10 @@ def vehicle_entry(lid: str, data: Dict[str, Any] = Body(...), user = Depends(req
 
 @router.get("/vehicles/{vid}/reservations")
 def vehicle_reservations(vid: str, user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
-    cur = con.execute("SELECT id FROM users WHERE username = ?", (user.get("username"),))
-    urow = cur.fetchone()
-    if not urow:
+    # Use database function to get user ID
+    uid = get_user_id_by_username(con, user.get("username"))
+    if not uid:
         raise HTTPException(400, detail="User not found")
-    uid = urow["id"]
 
     norm_vid = _mk_lid(vid)
     vrow = con.execute("SELECT * FROM vehicles WHERE user_id = ? AND lower(replace(license_plate,'-','')) = ?", (uid, norm_vid)).fetchone()
@@ -199,11 +198,10 @@ def vehicle_reservations(vid: str, user = Depends(require_session), con: sqlite3
 
 @router.get("/vehicles/{vid}/history")
 def vehicle_history(vid: str, user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
-    cur = con.execute("SELECT id FROM users WHERE username = ?", (user.get("username"),))
-    urow = cur.fetchone()
-    if not urow:
+    # Use database function to get user ID
+    uid = get_user_id_by_username(con, user.get("username"))
+    if not uid:
         raise HTTPException(400, detail="User not found")
-    uid = urow["id"]
 
     norm_vid = _mk_lid(vid)
     vrow = con.execute("SELECT * FROM vehicles WHERE user_id = ? AND lower(replace(license_plate,'-','')) = ?", (uid, norm_vid)).fetchone()

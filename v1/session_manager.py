@@ -1,5 +1,5 @@
 from fastapi.params import Depends
-from v1.Database.database_logic import get_connection
+from Database.database_logic import get_connection
 
 def add_session(token, user):
     with get_connection() as con:

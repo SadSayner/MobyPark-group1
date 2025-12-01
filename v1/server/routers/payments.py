@@ -4,10 +4,10 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 import sqlite3
 
-from v1.server.deps import require_session, require_admin
+from server.deps import require_session, require_admin
 from storage_utils import load_payment_data, save_payment_data
 import session_calculator as sc
-from v1.Database.database_logic import get_db
+from Database.database_logic import get_db, get_user_id_by_username, get_payments_by_user_id, update_payment
 
 router = APIRouter()
 
@@ -37,11 +37,10 @@ def create_payment(payload: PaymentIn, user = Depends(require_session), con: sql
     if amount <= 0:
         raise HTTPException(400, detail={"error": "Invalid amount"})
 
-    cur = con.execute("SELECT id FROM users WHERE username = ?", (user.get("username"),))
-    row = cur.fetchone()
-    if not row:
+    # Use database function to get user ID
+    user_id = get_user_id_by_username(con, user.get("username"))
+    if not user_id:
         raise HTTPException(400, detail="User not found")
-    user_id = row["id"]
 
     # optional: link parking session (id) to created payment. Only if the user owns the session or is admin.
     session_id = None
@@ -51,13 +50,13 @@ def create_payment(payload: PaymentIn, user = Depends(require_session), con: sql
             linked_sid = int(payload.parkingsession_id)
         except Exception:
             raise HTTPException(400, detail="Invalid parkingsession_id (expect parking session id)")
-        srow = con.execute("SELECT id, user_id, parking_lot_id FROM parking_sessions WHERE id = ?", (linked_sid,)).fetchone()
+        srow = con.execute("SELECT session_id, user_id, parking_lot_id FROM sessions WHERE session_id = ?", (linked_sid,)).fetchone()
         if not srow:
             raise HTTPException(404, detail="Linked parking session not found")
         # only owner or admin may create payment for the session
         if user.get("role") != "ADMIN" and srow["user_id"] is not None and srow["user_id"] != user_id:
             raise HTTPException(403, detail="Not allowed to create payment for this session")
-        session_id = srow["id"]
+        session_id = srow["session_id"]
         parking_lot_id = srow["parking_lot_id"]
 
     # generate transaction id and validation hash
@@ -127,11 +126,10 @@ def refund_payment(payload: PaymentIn, admin = Depends(require_admin), con: sqli
     # get admin id (prefer id from require_admin if present)
     admin_id = admin.get("id")
     if admin_id is None:
-        cur = con.execute("SELECT id FROM users WHERE username = ?", (admin.get("username"),))
-        row = cur.fetchone()
-        if not row:
+        # Use database function to get admin ID
+        admin_id = get_user_id_by_username(con, admin.get("username"))
+        if not admin_id:
             raise HTTPException(400, detail="Admin not found")
-        admin_id = row["id"]
 
     # resolve linked session (if provided) and determine refund recipient
     session_id = None
@@ -142,10 +140,10 @@ def refund_payment(payload: PaymentIn, admin = Depends(require_admin), con: sqli
             sid = int(payload.parkingsession_id)
         except Exception:
             raise HTTPException(400, detail="Invalid parkingsession_id (expect parking session id)")
-        srow = con.execute("SELECT id, user_id, parking_lot_id FROM parking_sessions WHERE id = ?", (sid,)).fetchone()
+        srow = con.execute("SELECT session_id, user_id, parking_lot_id FROM sessions WHERE session_id = ?", (sid,)).fetchone()
         if not srow:
             raise HTTPException(404, detail="Linked parking session not found")
-        session_id = srow["id"]
+        session_id = srow["session_id"]
         parking_lot_id = srow["parking_lot_id"]
         recipient_user_id = srow["user_id"]  # may be None for guest sessions
 
@@ -153,11 +151,10 @@ def refund_payment(payload: PaymentIn, admin = Depends(require_admin), con: sqli
     if recipient_user_id is None:
         if not payload.recipient:
             raise HTTPException(400, detail="Refund must specify a recipient username or a session with an owner")
-        cur = con.execute("SELECT id FROM users WHERE username = ?", (payload.recipient,))
-        urow = cur.fetchone()
-        if not urow:
+        # Use database function to get recipient ID
+        recipient_user_id = get_user_id_by_username(con, payload.recipient)
+        if not recipient_user_id:
             raise HTTPException(404, detail="Recipient user not found")
-        recipient_user_id = urow["id"]
 
     # transaction metadata
     import uuid
@@ -250,15 +247,18 @@ def complete_payment(transaction_id: str, payload: PaymentIn, user = Depends(req
     completed = 1
     completed_at = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
 
-    con.execute(
-        """
-        UPDATE payments
-        SET completed = ?, t_date = ?, t_method = ?, t_issuer = ?, t_bank = ?, t_amount = ?
-        WHERE transaction_id = ?
-        """,
-        (completed, t_date, t_method, t_issuer, t_bank, t_amount, transaction_id)
-    )
-    con.commit()
+    # Use database function to update payment
+    updates = {
+        "completed": completed,
+        "t_date": t_date,
+        "t_method": t_method,
+        "t_issuer": t_issuer,
+        "t_bank": t_bank,
+        "t_amount": t_amount,
+    }
+    success = update_payment(con, transaction_id, updates)
+    if not success:
+        raise HTTPException(500, detail="Failed to update payment")
 
     updated = con.execute("SELECT * FROM payments WHERE transaction_id = ?", (transaction_id,)).fetchone()
     return {"status": "Success", "payment_completed_at": completed_at, "payment": _row_to_dict(updated)}
@@ -266,41 +266,43 @@ def complete_payment(transaction_id: str, payload: PaymentIn, user = Depends(req
 
 @router.get("/payments")
 def list_my_payments(user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
-    cur = con.execute("SELECT id FROM users WHERE username = ?", (user.get("username"),))
-    user_row = cur.fetchone()
-    if not user_row:
+    # Use database function to get user ID
+    user_id = get_user_id_by_username(con, user.get("username"))
+    if not user_id:
         return []
-    user_id = user_row["id"]
-    rows = con.execute("SELECT * FROM payments WHERE user_id = ? ORDER BY created_at DESC", (user_id,)).fetchall()
-    return [_row_to_dict(r) for r in rows]
+    # Use database function to get payments
+    payments = get_payments_by_user_id(con, user_id)
+    return payments
 
 
 @router.get("/payments/{user_name}")
 def list_user_payments(user_name: str, admin = Depends(require_admin), con: sqlite3.Connection = Depends(get_db)):
-    cur = con.execute("SELECT id FROM users WHERE username = ?", (user_name,))
-    user_row = cur.fetchone()
-    if not user_row:
+    # Use database function to get user ID
+    user_id = get_user_id_by_username(con, user_name)
+    if not user_id:
         return []
-    user_id = user_row["id"]
-    rows = con.execute("SELECT * FROM payments WHERE user_id = ? ORDER BY created_at DESC", (user_id,)).fetchall()
-    return [_row_to_dict(r) for r in rows]
+    # Use database function to get payments
+    payments = get_payments_by_user_id(con, user_id)
+    return payments
 
 
 @router.get("/billing")
 def my_billing(user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
-    # build billing view from DB parking_sessions + parking_lots + payments
-    cur = con.execute("SELECT id FROM users WHERE username = ?", (user.get("username"),))
-    user_row = cur.fetchone()
-    if not user_row:
+    # build billing view from DB sessions + parking_lots + payments
+    # Use database function to get user ID
+    user_id = get_user_id_by_username(con, user.get("username"))
+    if not user_id:
         return []
-    user_id = user_row["id"]
 
-    sessions = con.execute("SELECT * FROM parking_sessions WHERE user_id = ?", (user_id,)).fetchall()
+    sessions = con.execute("SELECT * FROM sessions WHERE user_id = ?", (user_id,)).fetchall()
     data = []
     for s in sessions:
         sdict = dict(s)
-        sid = sdict.get("id")
+        sid = sdict.get("session_id")
         lot_id = sdict.get("parking_lot_id")
+        vehicle_id = sdict.get("vehicle_id")
+
+        # Get parking lot details
         lot = con.execute("SELECT * FROM parking_lots WHERE id = ?", (lot_id,)).fetchone()
         lotd = dict(lot) if lot else {}
         parking = {
@@ -309,7 +311,13 @@ def my_billing(user = Depends(require_session), con: sqlite3.Connection = Depend
             "tariff": lotd.get("tariff"),
             "daytariff": lotd.get("daytariff"),
         }
-        licenseplate = sdict.get("license_plate") or sdict.get("licenseplate") or sdict.get("license")
+
+        # Get vehicle/license plate
+        licenseplate = ""
+        if vehicle_id:
+            vehicle = con.execute("SELECT license_plate FROM vehicles WHERE id = ?", (vehicle_id,)).fetchone()
+            licenseplate = vehicle["license_plate"] if vehicle else ""
+
         session_obj = {
             "licenseplate": licenseplate,
             "started": sdict.get("started"),
@@ -333,18 +341,20 @@ def my_billing(user = Depends(require_session), con: sqlite3.Connection = Depend
 
 @router.get("/billing/{user_name}")  # admin only
 def user_billing(user_name: str, admin = Depends(require_admin), con: sqlite3.Connection = Depends(get_db)):
-    cur = con.execute("SELECT id FROM users WHERE username = ?", (user_name,))
-    urow = cur.fetchone()
-    if not urow:
+    # Use database function to get user ID
+    uid = get_user_id_by_username(con, user_name)
+    if not uid:
         return []
-    uid = urow["id"]
 
-    sessions = con.execute("SELECT * FROM parking_sessions WHERE user_id = ?", (uid,)).fetchall()
+    sessions = con.execute("SELECT * FROM sessions WHERE user_id = ?", (uid,)).fetchall()
     data = []
     for s in sessions:
         sdict = dict(s)
-        sid = sdict.get("id")
+        sid = sdict.get("session_id")
         lot_id = sdict.get("parking_lot_id")
+        vehicle_id = sdict.get("vehicle_id")
+
+        # Get parking lot details
         lot = con.execute("SELECT * FROM parking_lots WHERE id = ?", (lot_id,)).fetchone()
         lotd = dict(lot) if lot else {}
         parking = {
@@ -353,7 +363,13 @@ def user_billing(user_name: str, admin = Depends(require_admin), con: sqlite3.Co
             "tariff": lotd.get("tariff"),
             "daytariff": lotd.get("daytariff"),
         }
-        licenseplate = sdict.get("license_plate") or sdict.get("licenseplate") or sdict.get("license")
+
+        # Get vehicle/license plate
+        licenseplate = ""
+        if vehicle_id:
+            vehicle = con.execute("SELECT license_plate FROM vehicles WHERE id = ?", (vehicle_id,)).fetchone()
+            licenseplate = vehicle["license_plate"] if vehicle else ""
+
         session_obj = {"licenseplate": licenseplate, "started": sdict.get("started"), "stopped": sdict.get("stopped")}
         try:
             amount, hours, days = sc.calculate_price(parking, str(sid), session_obj)

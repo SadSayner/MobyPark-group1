@@ -2,6 +2,8 @@
 import sqlite3
 import csv
 import json
+import os
+import datetime
 from Database.database_logic import *
 from Models.Session_data_model import Session_data
 from Models.parkinglots_model import Parking_lots_model
@@ -9,7 +11,6 @@ from Models.reservations_model import Reservations_model
 from Models.user_model import User_model
 from Models.vehicle_model import Vehicle_model
 from Models.payment_model import Payment_model
-import datetime
 
 
 def load_json(filename):
@@ -84,60 +85,69 @@ def load_data(filename):
         return None
 
 
+# Get the directory where this file is located
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+_DATA_DIR = os.path.join(_BASE_DIR, 'data')
+
+def _get_data_path(filename):
+    """Get absolute path to data file"""
+    return os.path.join(_DATA_DIR, filename)
+
+
 def load_user_data():
-    return load_data('data/users.json')
+    return load_data(_get_data_path('users.json'))
 
 
 def save_user_data(data):
-    save_data('data/users.json', data)
+    save_data(_get_data_path('users.json'), data)
 
 
 def load_parking_lot_data():
-    return load_data('data/parking-lots.json')
+    return load_data(_get_data_path('parking-lots.json'))
 
 
 def save_parking_lot_data(data):
-    save_data('data/parking-lots.json', data)
+    save_data(_get_data_path('parking-lots.json'), data)
 
 
 def load_reservation_data():
-    return load_data('data/reservations.json')
+    return load_data(_get_data_path('reservations.json'))
 
 
 def save_reservation_data(data):
-    save_data('data/reservations.json', data)
+    save_data(_get_data_path('reservations.json'), data)
 
 
 def load_payment_data():
-    return load_data('v1\data\payments.json')
+    return load_data(_get_data_path('payments.json'))
 
 
 def save_payment_data(data):
-    save_data('data/payments.json', data)
+    save_data(_get_data_path('payments.json'), data)
 
 
 def load_discounts_data():
-    return load_data('data/discounts.csv')
+    return load_data(_get_data_path('discounts.csv'))
 
 
 def save_discounts_data(data):
-    save_data('data/discounts.csv', data)
+    save_data(_get_data_path('discounts.csv'), data)
 
 
 def get_parking_lot_data_from_json():
-    return load_data('v1\data\parking-lots.json')
+    return load_data(_get_data_path('parking-lots.json'))
 
 
 def get_user_data_from_json():
-    return load_data("v1//data//users.json")
+    return load_data(_get_data_path('users.json'))
 
 
 def get_vehicle_data_from_json():
-    return load_data('v1\data//vehicles.json')
+    return load_data(_get_data_path('vehicles.json'))
 
 
 def get_reservation_data_from_json():
-    return load_data('v1\data//reservations.json')
+    return load_data(_get_data_path('reservations.json'))
 
 
 def add_parking_lots_to_db():
@@ -198,22 +208,28 @@ def add_reservations_to_db():
 
 def add_session_data_to_db():
     connection = get_connection()
-    sessions = load_data('v1\data\pdata\p2-sessions.json')
+    sessions_path = os.path.join(_DATA_DIR, 'pdata', 'p2-sessions.json')
+    sessions = load_data(sessions_path)
     logs = []
+    if not sessions:
+        return  # Skip if no sessions file
     for entry_value in sessions.values():
-        if not record_exists(connection, 'parking_sessions', entry_value):
+        if not record_exists(connection, 'sessions', entry_value):
             insert_parking_session(
                 connection, Session_data.from_dict(entry_value))
         else:
             log_message = f"Session with ID {entry_value['id']} already exists. Skipping insertion."
             logs.append(log_message)
-    write_log('\n'.join(logs))
+    if logs:
+        write_log('\n'.join(logs))
 
 
 def add_payments_to_db():
     connection = get_connection()
-    payments = load_data('v1\data\payments.json')
+    payments = load_data(_get_data_path('payments.json'))
     logs = []
+    if not payments:
+        return  # Skip if no payments file
     for entry_value in payments:
         transaction = Payment_model.to_dict(
             Payment_model.from_dict(entry_value))
@@ -227,15 +243,58 @@ def add_payments_to_db():
 
 
 def main():
-    payments = load_data('v1\data\payments.json')
-    print(payments[0])
-    # add_payments_to_db()
-    print("Payments added to DB")
-    # add_session_data_to_db()
-    # add_parking_lots_to_db()
-    # add_users_to_db()
-    # add_vehicles_to_db()
-    # add_reservations_to_db()
+    """
+    Main function to load all data from JSON files into the database.
+    Run this after providing your JSON data files in v1/data/ directory.
+    """
+    print("Loading data from JSON files into database...")
+    print(f"Data directory: {_DATA_DIR}")
+
+    # Check if data directory exists
+    if not os.path.exists(_DATA_DIR):
+        print(f"Creating data directory: {_DATA_DIR}")
+        os.makedirs(_DATA_DIR)
+        print("Please add your JSON data files to the data/ directory and run again.")
+        return
+
+    # Load data into database
+    try:
+        add_parking_lots_to_db()
+        print("- Parking lots loaded")
+    except Exception as e:
+        print(f"- Parking lots: {e}")
+
+    try:
+        add_users_to_db()
+        print("- Users loaded")
+    except Exception as e:
+        print(f"- Users: {e}")
+
+    try:
+        add_vehicles_to_db()
+        print("- Vehicles loaded")
+    except Exception as e:
+        print(f"- Vehicles: {e}")
+
+    try:
+        add_reservations_to_db()
+        print("- Reservations loaded")
+    except Exception as e:
+        print(f"- Reservations: {e}")
+
+    try:
+        add_session_data_to_db()
+        print("- Sessions loaded")
+    except Exception as e:
+        print(f"- Sessions: {e}")
+
+    try:
+        add_payments_to_db()
+        print("- Payments loaded")
+    except Exception as e:
+        print(f"- Payments: {e}")
+
+    print("\nData loading complete!")
 
 
 if __name__ == "__main__":

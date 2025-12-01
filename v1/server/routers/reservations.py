@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
-from v1.server.deps import require_session, require_admin
-from v1.Database.database_logic import get_db
+from server.deps import require_session, require_admin
+from Database.database_logic import get_db, get_parking_lot_by_id, update_reservation, delete_reservation
 import sqlite3
 
 router = APIRouter()
@@ -28,8 +28,8 @@ def create_reservation(payload: ReservationIn, user = Depends(require_session), 
     if not payload.parkinglot:
         raise HTTPException(400, detail={"error": "Require field missing", "field": "parkinglot"})
 
-    #kijk of parking lot bestaat
-    parkinglot = con.execute("SELECT id FROM parking_lots WHERE id = ?", (payload.parkinglot,)).fetchone()
+    # Check if parking lot exists using database function
+    parkinglot = get_parking_lot_by_id(con, int(payload.parkinglot))
     if not parkinglot:
         raise HTTPException(404, detail={"error": "Parking lot not found", "field": "parkinglot"})
 
@@ -104,8 +104,8 @@ def update_reservation(rid: str, payload: ReservationIn, user = Depends(require_
     old_parkinglot = old.get("parkinglot")
     new_parkinglot = data["parkinglot"]
     if old_parkinglot != new_parkinglot:
-        # ensure new parking lot exists
-        pl = con.execute("SELECT id FROM parking_lots WHERE id = ?", (new_parkinglot,)).fetchone()
+        # ensure new parking lot exists using database function
+        pl = get_parking_lot_by_id(con, int(new_parkinglot))
         if not pl:
             raise HTTPException(404, detail={"error": "Parking lot not found", "field": "parkinglot"})
         # decrement old
@@ -114,16 +114,17 @@ def update_reservation(rid: str, payload: ReservationIn, user = Depends(require_
         # increment new
         con.execute("UPDATE parking_lots SET reserved = COALESCE(reserved,0) + 1 WHERE id = ?", (new_parkinglot,))
 
-    # perform update
-    con.execute(
-        """
-        UPDATE reservations
-        SET licenseplate = ?, startdate = ?, enddate = ?, parkinglot = ?, user = ?
-        WHERE id = ?
-        """,
-        (data["licenseplate"], data["startdate"], data["enddate"], data["parkinglot"], data["user"], rid),
-    )
-    con.commit()
+    # Use database function to update reservation
+    updates = {
+        "licenseplate": data["licenseplate"],
+        "startdate": data["startdate"],
+        "enddate": data["enddate"],
+        "parkinglot": data["parkinglot"],
+        "user": data["user"],
+    }
+    success = update_reservation(con, int(rid), updates)
+    if not success:
+        raise HTTPException(500, detail="Failed to update reservation")
 
     updated = con.execute("SELECT * FROM reservations WHERE id = ?", (rid,)).fetchone()
     result = dict(updated)
@@ -132,7 +133,7 @@ def update_reservation(rid: str, payload: ReservationIn, user = Depends(require_
 
 
 @router.delete("/reservations/{rid}")
-def delete_reservation(rid: str, user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
+def delete_reservation_route(rid: str, user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
     row = con.execute("SELECT * FROM reservations WHERE id = ?", (rid,)).fetchone()
     if not row:
         raise HTTPException(404, detail="Reservation not found")
@@ -141,8 +142,15 @@ def delete_reservation(rid: str, user = Depends(require_session), con: sqlite3.C
         raise HTTPException(403, detail="Access denied")
 
     pid = row.get("parkinglot")
-    con.execute("DELETE FROM reservations WHERE id = ?", (rid,))
+
+    # Use database function to delete reservation
+    success = delete_reservation(con, int(rid))
+    if not success:
+        raise HTTPException(500, detail="Failed to delete reservation")
+
+    # Decrement reserved count on parking lot
     if pid:
         con.execute("UPDATE parking_lots SET reserved = MAX(COALESCE(reserved,0) - 1, 0) WHERE id = ?", (pid,))
-    con.commit()
+        con.commit()
+
     return {"status": "Deleted"}

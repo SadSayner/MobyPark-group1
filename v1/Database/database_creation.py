@@ -14,15 +14,15 @@ def create_database(db_path="v1/Database/MobyPark.db"):
         cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL,
+            username TEXT NOT NULL UNIQUE,
             password TEXT NOT NULL,
             name TEXT NOT NULL,
-            email TEXT NOT NULL UNIQUE,
-            phone TEXT NOT NULL,
+            email TEXT UNIQUE,
+            phone TEXT,
             role TEXT NOT NULL DEFAULT 'USER',
-            created_at TEXT NOT NULL,
-            birth_year INTEGER NOT NULL,
-            active INTEGER NOT NULL
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            birth_year INTEGER,
+            active INTEGER DEFAULT 1
         );
         """)
 
@@ -47,26 +47,33 @@ def create_database(db_path="v1/Database/MobyPark.db"):
         cur.execute("""
         CREATE TABLE IF NOT EXISTS vehicles (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            license_plate TEXT NOT NULL UNIQUE,
-            make TEXT NOT NULL,
-            model TEXT NOT NULL,
-            color TEXT NOT NULL,
-            year INTEGER NOT NULL,
-            created_at TEXT NOT NULL
+            user_id INTEGER NOT NULL,
+            license_plate TEXT NOT NULL,
+            make TEXT,
+            model TEXT,
+            color TEXT,
+            year INTEGER,
+            name TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
         """)
 
-        # Sessions
+        # Sessions (parking sessions)
         cur.execute("""
         CREATE TABLE IF NOT EXISTS sessions (
             session_id INTEGER PRIMARY KEY AUTOINCREMENT,
             parking_lot_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
+            vehicle_id INTEGER,
             started TEXT NOT NULL,
-            duration_minutes INTEGER NOT NULL,
-            payment_status TEXT NOT NULL,
+            stopped TEXT,
+            duration_minutes INTEGER,
+            payment_status TEXT,
             FOREIGN KEY (parking_lot_id) REFERENCES parking_lots(id) ON DELETE CASCADE,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE SET NULL
         );
         """)
 

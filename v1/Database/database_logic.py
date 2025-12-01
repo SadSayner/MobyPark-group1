@@ -16,12 +16,14 @@ _VALID_ROLES = {"USER", "ADMIN"}
 
 
 def get_connection(db_path: str = None) -> sqlite3.Connection:
-    if db_path is None:
-        db_path = 'v1\Database\MobyPark.db'
     """
     Open a connection to the SQLite database at db_path.
     Enables foreign key constraints.
     """
+    if db_path is None:
+        # Use path relative to this file's location
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        db_path = os.path.join(current_dir, 'MobyPark.db')
     con = sqlite3.connect(db_path)
     # Make rows accessible like dicts if you want (optional)
     con.row_factory = sqlite3.Row
@@ -513,78 +515,57 @@ def get_reservations_by_vehicle_id(con: sqlite3.Connection, vehicle_id: int):
 
 def insert_parking_session(con: sqlite3.Connection, session_obj) -> int:
     """
-    Insert a parking session into the `parking_sessions` table.
+    Insert a parking session into the `sessions` table.
 
     Expects an object with attributes:
-      session_id, parking_lot_id, licenseplate, started, stopped, user,
-      duration_minutes, cost, payment_status
+      parking_lot_id, user_id, vehicle_id (optional), started, stopped (optional),
+      duration_minutes (optional), payment_status (optional)
 
-    Returns the auto-generated global id (int).
+    Returns the auto-generated session_id (int).
     Raises ValueError for validation issues and sqlite3.IntegrityError for FK/PK conflicts.
     """
     con.execute("PRAGMA foreign_keys = ON;")
 
     # --- Parse & validate ---
     try:
-        session_id = int(session_obj.session_id)
         lot_id = int(session_obj.parking_lot_id)
-        duration = None if session_obj.duration_minutes in (
-            None, "") else int(session_obj.duration_minutes)
-        cost = None if session_obj.cost in (
-            None, "") else float(session_obj.cost)
+        user_id = int(session_obj.user_id)
+        vehicle_id = None if not hasattr(session_obj, 'vehicle_id') or session_obj.vehicle_id in (None, "") else int(session_obj.vehicle_id)
+        duration = None if not hasattr(session_obj, 'duration_minutes') or session_obj.duration_minutes in (None, "") else int(session_obj.duration_minutes)
     except (TypeError, ValueError):
-        raise ValueError(
-            "session_id, parking_lot_id, duration_minutes, and cost must be numeric when provided.")
+        raise ValueError("parking_lot_id, user_id, vehicle_id, and duration_minutes must be numeric when provided.")
 
-    payment_status = (session_obj.payment_status or "").lower()
-    if payment_status not in _VALID_PAYMENT_STATUSES:
-        raise ValueError(
-            f"payment_status must be one of {_VALID_PAYMENT_STATUSES}, got '{session_obj.payment_status}'.")
+    payment_status = getattr(session_obj, 'payment_status', 'unpaid') or "unpaid"
+    if payment_status and payment_status.lower() not in _VALID_PAYMENT_STATUSES:
+        raise ValueError(f"payment_status must be one of {_VALID_PAYMENT_STATUSES}, got '{payment_status}'.")
 
     if duration is not None and duration < 0:
         raise ValueError("duration_minutes cannot be negative.")
-    if cost is not None and cost < 0:
-        raise ValueError("cost cannot be negative.")
 
-    # Check ISO8601 times
-    def _check_iso8601(ts: str, field: str):
-        if ts is None:
-            return
-        try:
-            if ts.endswith("Z"):
-                datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")
-            else:
-                datetime.fromisoformat(ts.replace("Z", "+00:00"))
-        except Exception:
-            raise ValueError(
-                f"{field} must be ISO8601 (e.g., 2020-03-25T20:29:47Z); got '{ts}'.")
-
-    _check_iso8601(session_obj.started, "started")
-    _check_iso8601(session_obj.stopped, "stopped")
+    started = getattr(session_obj, 'started', None)
+    stopped = getattr(session_obj, 'stopped', None)
 
     # --- Build payload ---
     payload = {
-        "session_id": session_id,
         "parking_lot_id": lot_id,
-        "licenseplate": session_obj.licenseplate,
-        "started": session_obj.started,
-        "stopped": session_obj.stopped,
-        "user": session_obj.user,
+        "user_id": user_id,
+        "vehicle_id": vehicle_id,
+        "started": started,
+        "stopped": stopped,
         "duration_minutes": duration,
-        "cost": cost,
         "payment_status": payment_status,
     }
 
     sql = """
-    INSERT INTO parking_sessions
-      (session_id, parking_lot_id, licenseplate, started, stopped, user, duration_minutes, cost, payment_status)
+    INSERT INTO sessions
+      (parking_lot_id, user_id, vehicle_id, started, stopped, duration_minutes, payment_status)
     VALUES
-      (:session_id, :parking_lot_id, :licenseplate, :started, :stopped, :user, :duration_minutes, :cost, :payment_status)
+      (:parking_lot_id, :user_id, :vehicle_id, :started, :stopped, :duration_minutes, :payment_status)
     """
 
     with con:
         cur = con.execute(sql, payload)
-        return cur.lastrowid  # returns global auto id
+        return cur.lastrowid  # returns session_id
 
     """
     Insert a parking session into the `parking_sessions` table.
@@ -853,6 +834,416 @@ def insert_payments_bulk(conn: sqlite3.Connection, payments, chunk_size: int = 1
     with conn:  # -> BEGIN ... COMMIT één keer
         for i in range(0, len(rows), chunk_size):
             conn.executemany(sql, rows[i:i+chunk_size])
+
+
+# ================= HELPER FUNCTIONS =================
+
+def get_user_id_by_username(con: sqlite3.Connection, username: str):
+    """
+    Get user ID by username.
+
+    Parameters:
+        con      - open sqlite3.Connection
+        username - username string
+
+    Returns:
+        User ID (int) or None if not found
+    """
+    con.execute("PRAGMA foreign_keys = ON;")
+    sql = "SELECT id FROM users WHERE username = ?"
+    cur = con.execute(sql, (username,))
+    row = cur.fetchone()
+    return row["id"] if row else None
+
+
+def get_session_by_id(con: sqlite3.Connection, session_id: int):
+    """
+    Get a parking session by ID.
+
+    Parameters:
+        con        - open sqlite3.Connection
+        session_id - session ID (int)
+
+    Returns:
+        Dict representing the session or None if not found
+    """
+    con.execute("PRAGMA foreign_keys = ON;")
+    sql = "SELECT * FROM sessions WHERE session_id = ?"
+    cur = con.execute(sql, (session_id,))
+    row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def get_sessions_by_parking_lot(con: sqlite3.Connection, parking_lot_id: int):
+    """
+    Get all sessions for a parking lot.
+
+    Parameters:
+        con            - open sqlite3.Connection
+        parking_lot_id - parking lot ID (int)
+
+    Returns:
+        List of dicts representing sessions
+    """
+    con.execute("PRAGMA foreign_keys = ON;")
+    sql = "SELECT * FROM sessions WHERE parking_lot_id = ?"
+    cur = con.execute(sql, (parking_lot_id,))
+    rows = cur.fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_sessions_by_user_id(con: sqlite3.Connection, user_id: int):
+    """
+    Get all sessions for a user.
+
+    Parameters:
+        con     - open sqlite3.Connection
+        user_id - user ID (int)
+
+    Returns:
+        List of dicts representing sessions
+    """
+    con.execute("PRAGMA foreign_keys = ON;")
+    sql = "SELECT * FROM sessions WHERE user_id = ?"
+    cur = con.execute(sql, (user_id,))
+    rows = cur.fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_payments_by_user_id(con: sqlite3.Connection, user_id: int):
+    """
+    Get all payments for a user.
+
+    Parameters:
+        con     - open sqlite3.Connection
+        user_id - user ID (int)
+
+    Returns:
+        List of dicts representing payments
+    """
+    con.execute("PRAGMA foreign_keys = ON;")
+    sql = "SELECT * FROM payments WHERE user_id = ? ORDER BY created_at DESC"
+    cur = con.execute(sql, (user_id,))
+    rows = cur.fetchall()
+    return [dict(row) for row in rows]
+
+
+# ================= UPDATE FUNCTIONS =================
+
+def update_user(con: sqlite3.Connection, username: str, updates: dict) -> bool:
+    """
+    Update user fields.
+
+    Parameters:
+        con      - open sqlite3.Connection
+        username - username of the user to update
+        updates  - dict with field names and new values
+
+    Returns:
+        True if updated, False if user not found
+    """
+    con.execute("PRAGMA foreign_keys = ON;")
+
+    # Check if user exists
+    cur = con.execute("SELECT 1 FROM users WHERE username = ?", (username,))
+    if not cur.fetchone():
+        return False
+
+    # Build dynamic UPDATE statement
+    allowed_fields = ["name", "password", "email", "phone", "role", "birth_year", "active"]
+    fields_to_update = {k: v for k, v in updates.items() if k in allowed_fields and v is not None}
+
+    if not fields_to_update:
+        return True  # No valid fields to update
+
+    set_clause = ", ".join([f"{field} = ?" for field in fields_to_update.keys()])
+    sql = f"UPDATE users SET {set_clause} WHERE username = ?"
+
+    values = list(fields_to_update.values()) + [username]
+
+    with con:
+        con.execute(sql, values)
+
+    return True
+
+
+def update_parking_lot(con: sqlite3.Connection, lot_id: int, updates: dict) -> bool:
+    """
+    Update parking lot fields.
+
+    Parameters:
+        con     - open sqlite3.Connection
+        lot_id  - parking lot ID
+        updates - dict with field names and new values
+
+    Returns:
+        True if updated, False if parking lot not found
+    """
+    con.execute("PRAGMA foreign_keys = ON;")
+
+    # Check if parking lot exists
+    cur = con.execute("SELECT 1 FROM parking_lots WHERE id = ?", (lot_id,))
+    if not cur.fetchone():
+        return False
+
+    # Build dynamic UPDATE statement
+    allowed_fields = ["name", "location", "address", "capacity", "reserved", "tariff", "daytariff", "lat", "lng"]
+    fields_to_update = {k: v for k, v in updates.items() if k in allowed_fields and v is not None}
+
+    if not fields_to_update:
+        return True
+
+    set_clause = ", ".join([f"{field} = ?" for field in fields_to_update.keys()])
+    sql = f"UPDATE parking_lots SET {set_clause} WHERE id = ?"
+
+    values = list(fields_to_update.values()) + [lot_id]
+
+    with con:
+        con.execute(sql, values)
+
+    return True
+
+
+def update_vehicle(con: sqlite3.Connection, vehicle_id: int, updates: dict) -> bool:
+    """
+    Update vehicle fields.
+
+    Parameters:
+        con        - open sqlite3.Connection
+        vehicle_id - vehicle ID
+        updates    - dict with field names and new values
+
+    Returns:
+        True if updated, False if vehicle not found
+    """
+    con.execute("PRAGMA foreign_keys = ON;")
+
+    # Check if vehicle exists
+    cur = con.execute("SELECT 1 FROM vehicles WHERE id = ?", (vehicle_id,))
+    if not cur.fetchone():
+        return False
+
+    # Build dynamic UPDATE statement
+    allowed_fields = ["license_plate", "make", "model", "color", "year", "name", "updated_at"]
+    fields_to_update = {k: v for k, v in updates.items() if k in allowed_fields and v is not None}
+
+    if not fields_to_update:
+        return True
+
+    set_clause = ", ".join([f"{field} = ?" for field in fields_to_update.keys()])
+    sql = f"UPDATE vehicles SET {set_clause} WHERE id = ?"
+
+    values = list(fields_to_update.values()) + [vehicle_id]
+
+    with con:
+        con.execute(sql, values)
+
+    return True
+
+
+def update_reservation(con: sqlite3.Connection, reservation_id: int, updates: dict) -> bool:
+    """
+    Update reservation fields.
+
+    Parameters:
+        con            - open sqlite3.Connection
+        reservation_id - reservation ID
+        updates        - dict with field names and new values
+
+    Returns:
+        True if updated, False if reservation not found
+    """
+    con.execute("PRAGMA foreign_keys = ON;")
+
+    # Check if reservation exists
+    cur = con.execute("SELECT 1 FROM reservations WHERE id = ?", (reservation_id,))
+    if not cur.fetchone():
+        return False
+
+    # Build dynamic UPDATE statement
+    allowed_fields = ["user_id", "parking_lot_id", "vehicle_id", "start_time", "duration", "status", "licenseplate", "startdate", "enddate", "parkinglot", "user"]
+    fields_to_update = {k: v for k, v in updates.items() if k in allowed_fields and v is not None}
+
+    if not fields_to_update:
+        return True
+
+    set_clause = ", ".join([f"{field} = ?" for field in fields_to_update.keys()])
+    sql = f"UPDATE reservations SET {set_clause} WHERE id = ?"
+
+    values = list(fields_to_update.values()) + [reservation_id]
+
+    with con:
+        con.execute(sql, values)
+
+    return True
+
+
+def update_payment(con: sqlite3.Connection, transaction_id: str, updates: dict) -> bool:
+    """
+    Update payment fields.
+
+    Parameters:
+        con            - open sqlite3.Connection
+        transaction_id - transaction ID
+        updates        - dict with field names and new values
+
+    Returns:
+        True if updated, False if payment not found
+    """
+    con.execute("PRAGMA foreign_keys = ON;")
+
+    # Check if payment exists
+    cur = con.execute("SELECT 1 FROM payments WHERE transaction_id = ?", (transaction_id,))
+    if not cur.fetchone():
+        return False
+
+    # Build dynamic UPDATE statement
+    allowed_fields = ["amount", "completed", "t_date", "t_method", "t_issuer", "t_bank", "t_amount"]
+    fields_to_update = {k: v for k, v in updates.items() if k in allowed_fields and v is not None}
+
+    if not fields_to_update:
+        return True
+
+    set_clause = ", ".join([f"{field} = ?" for field in fields_to_update.keys()])
+    sql = f"UPDATE payments SET {set_clause} WHERE transaction_id = ?"
+
+    values = list(fields_to_update.values()) + [transaction_id]
+
+    with con:
+        con.execute(sql, values)
+
+    return True
+
+
+def update_session(con: sqlite3.Connection, session_id: int, updates: dict) -> bool:
+    """
+    Update parking session fields.
+
+    Parameters:
+        con        - open sqlite3.Connection
+        session_id - session ID
+        updates    - dict with field names and new values
+
+    Returns:
+        True if updated, False if session not found
+    """
+    con.execute("PRAGMA foreign_keys = ON;")
+
+    # Check if session exists
+    cur = con.execute("SELECT 1 FROM sessions WHERE session_id = ?", (session_id,))
+    if not cur.fetchone():
+        return False
+
+    # Build dynamic UPDATE statement
+    allowed_fields = ["parking_lot_id", "user_id", "started", "duration_minutes", "payment_status", "stopped"]
+    fields_to_update = {k: v for k, v in updates.items() if k in allowed_fields and v is not None}
+
+    if not fields_to_update:
+        return True
+
+    set_clause = ", ".join([f"{field} = ?" for field in fields_to_update.keys()])
+    sql = f"UPDATE sessions SET {set_clause} WHERE session_id = ?"
+
+    values = list(fields_to_update.values()) + [session_id]
+
+    with con:
+        con.execute(sql, values)
+
+    return True
+
+
+# ================= DELETE FUNCTIONS =================
+
+def delete_parking_lot(con: sqlite3.Connection, lot_id: int) -> bool:
+    """
+    Delete a parking lot by ID.
+
+    Parameters:
+        con    - open sqlite3.Connection
+        lot_id - parking lot ID
+
+    Returns:
+        True if deleted, False if not found
+    """
+    con.execute("PRAGMA foreign_keys = ON;")
+
+    cur = con.execute("SELECT 1 FROM parking_lots WHERE id = ?", (lot_id,))
+    if not cur.fetchone():
+        return False
+
+    with con:
+        con.execute("DELETE FROM parking_lots WHERE id = ?", (lot_id,))
+
+    return True
+
+
+def delete_vehicle(con: sqlite3.Connection, vehicle_id: int) -> bool:
+    """
+    Delete a vehicle by ID.
+
+    Parameters:
+        con        - open sqlite3.Connection
+        vehicle_id - vehicle ID
+
+    Returns:
+        True if deleted, False if not found
+    """
+    con.execute("PRAGMA foreign_keys = ON;")
+
+    cur = con.execute("SELECT 1 FROM vehicles WHERE id = ?", (vehicle_id,))
+    if not cur.fetchone():
+        return False
+
+    with con:
+        con.execute("DELETE FROM vehicles WHERE id = ?", (vehicle_id,))
+
+    return True
+
+
+def delete_reservation(con: sqlite3.Connection, reservation_id: int) -> bool:
+    """
+    Delete a reservation by ID.
+
+    Parameters:
+        con            - open sqlite3.Connection
+        reservation_id - reservation ID
+
+    Returns:
+        True if deleted, False if not found
+    """
+    con.execute("PRAGMA foreign_keys = ON;")
+
+    cur = con.execute("SELECT 1 FROM reservations WHERE id = ?", (reservation_id,))
+    if not cur.fetchone():
+        return False
+
+    with con:
+        con.execute("DELETE FROM reservations WHERE id = ?", (reservation_id,))
+
+    return True
+
+
+def delete_session(con: sqlite3.Connection, session_id: int) -> bool:
+    """
+    Delete a parking session by ID.
+
+    Parameters:
+        con        - open sqlite3.Connection
+        session_id - session ID
+
+    Returns:
+        True if deleted, False if not found
+    """
+    con.execute("PRAGMA foreign_keys = ON;")
+
+    cur = con.execute("SELECT 1 FROM sessions WHERE session_id = ?", (session_id,))
+    if not cur.fetchone():
+        return False
+
+    with con:
+        con.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+
+    return True
 
 
 def wipe_table(con: sqlite3.Connection, table: str):

@@ -28,20 +28,20 @@ class Parking_lots_model:
             lng=data['coordinates']['lng']
         )
 
-    @staticmethod
-    def to_dict(data):
+    def to_dict(self):
+        """Convert this parking lot object to a dictionary"""
         return {
-            'id': data['id'],
-            'name': data['name'],
-            'location': data['location'],
-            'address': data['address'],
-            'capacity': data['capacity'],
-            'reserved': data['reserved'],
-            'tariff': data['tariff'],
-            'daytariff': data['daytariff'],
-            'created_at': data['created_at'],
-            'lat': data['coordinates']['lat'],
-            'lng': data['coordinates']['lng']
+            'id': self.id,
+            'name': self.name,
+            'location': self.location,
+            'address': self.address,
+            'capacity': self.capacity,
+            'reserved': self.reserved,
+            'tariff': self.tariff,
+            'daytariff': self.daytariff,
+            'created_at': self.created_at,
+            'lat': self.lat,
+            'lng': self.lng
         }
 
     def __repr__(self):
