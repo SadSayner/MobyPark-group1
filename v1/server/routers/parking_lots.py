@@ -4,9 +4,9 @@ from typing import Dict, Any
 from datetime import datetime
 import sqlite3
 
-from storage_utils import load_parking_lot_data, save_parking_lot_data, load_json, save_data
-from server.deps import require_session, require_admin
-from Database.database_logic import get_db, get_parking_lot_by_id, get_all_parking_lots, update_parking_lot, delete_parking_lot
+from ...storage_utils import load_parking_lot_data, save_parking_lot_data, load_json, save_data
+from ..deps import require_session, require_admin
+from ...Database.database_logic import get_db, get_parking_lot_by_id, get_all_parking_lots, update_parking_lot, delete_parking_lot
 
 router = APIRouter()
 
@@ -20,32 +20,6 @@ def row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
 
 @router.post("/parking-lots")
 def create_parking_lot(data: Dict[str, Any] = Body(...), admin = Depends(require_admin), con: sqlite3.Connection = Depends(get_db)):
-    cur = con.execute(
-        """
-        INSERT INTO parking_lots (name, location, address, capacity, reserved, tariff, daytariff, created_at, lat, lng)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            data.get("name"),
-            data.get("location"),
-            data.get("address"),
-            data.get("capacity"),
-            int(bool(data.get("reserved"))) if "reserved" in data else 0,
-            data.get("tariff"),
-            data.get("daytariff"),
-            now_str(),
-            data.get("lat"),
-            data.get("lng"),
-        ),
-    )
-    con.commit()
-    new_id = cur.lastrowid
-    return {"message": f"Parking lot saved under ID: {new_id}", "id": new_id}
-
-@router.post("/parking-lots")
-def create_parking_lot(data: Dict[str, Any] = Body(...), admin = Depends(require_admin),
-                       con: sqlite3.Connection = Depends(get_db)):
-    # map allowed fields; missing fields get NULL / defaults
     cur = con.execute(
         """
         INSERT INTO parking_lots (name, location, address, capacity, reserved, tariff, daytariff, created_at, lat, lng)

@@ -1,7 +1,7 @@
 
 from fastapi import Header, HTTPException, Depends
 from typing import Optional, Dict, Any
-from session_manager import get_session
+from ..session_manager import get_session
 
 #de dependencies die we gebruiken in de routers
 #de session token is de header

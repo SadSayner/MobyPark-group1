@@ -4,8 +4,8 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 import sqlite3
 
-from server.deps import require_session, require_admin
-from Database.database_logic import get_db, get_user_id_by_username, update_vehicle, delete_vehicle
+from ..deps import require_session, require_admin
+from ...Database.database_logic import get_db, get_user_id_by_username, update_vehicle, delete_vehicle
 
 router = APIRouter()
 
@@ -15,8 +15,18 @@ def now_str() -> str:
 
 
 class VehicleIn(BaseModel):
-    name: str
+    license_plate: str
+    make: str
+    model: str
+    color: str
+    year: int
+
+class UpdateVehicleIn(BaseModel):
     license_plate: Optional[str] = None
+    make: Optional[str] = None
+    model: Optional[str] = None
+    color: Optional[str] = None
+    year: Optional[int] = None
 
 
 def _mk_lid(plate: str) -> str:
@@ -25,88 +35,107 @@ def _mk_lid(plate: str) -> str:
 
 @router.post("/vehicles")
 def create_vehicle(payload: VehicleIn, user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
-    # basic validation
-    if not payload.name or not payload.license_plate:
-        raise HTTPException(400, detail={"error": "Require field missing", "field": "name/license_plate"})
     # Use database function to get user ID
     uid = get_user_id_by_username(con, user.get("username"))
     if not uid:
         raise HTTPException(400, detail="User not found")
 
     lid = _mk_lid(payload.license_plate)
-    # check duplicate for this user
+    # check duplicate for this user using user_vehicles junction table
     exists = con.execute(
-        "SELECT id FROM vehicles WHERE user_id = ? AND lower(replace(license_plate,'-','')) = ?",
+        """
+        SELECT v.id FROM vehicles v
+        JOIN user_vehicles uv ON v.id = uv.vehicle_id
+        WHERE uv.user_id = ? AND lower(replace(v.license_plate,'-','')) = ?
+        """,
         (uid, lid)
     ).fetchone()
     if exists:
         raise HTTPException(400, detail={"error": "Vehicle already exists", "id": exists["id"]})
 
     created_at = now_str()
+    # Insert into vehicles table with all fields
     con.execute(
         """
-        INSERT INTO vehicles (user_id, license_plate, name, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO vehicles (license_plate, make, model, color, year, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (uid, payload.license_plate, payload.name, created_at, created_at),
+        (payload.license_plate, payload.make, payload.model, payload.color, payload.year, created_at),
     )
-    con.commit()
     vid = con.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
+
+    # Link vehicle to user in user_vehicles
+    con.execute("INSERT INTO user_vehicles (user_id, vehicle_id) VALUES (?, ?)", (uid, vid))
+    con.commit()
 
     vehicle = {
         "id": vid,
-        "licenseplate": payload.license_plate,
-        "name": payload.name,
+        "license_plate": payload.license_plate,
+        "make": payload.make,
+        "model": payload.model,
+        "color": payload.color,
+        "year": payload.year,
         "created_at": created_at,
-        "updated_at": created_at,
     }
-    return {"status": "Success", "vehicle": vehicle}
+    return vehicle
 
 
 @router.put("/vehicles/{lid}")
-def update_vehicle_route(lid: str, payload: VehicleIn, user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
-    if not payload.name:
-        raise HTTPException(400, detail={"error": "Require field missing", "field": "name"})
+def update_vehicle_route(lid: str, payload: UpdateVehicleIn, user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
     # Use database function to get user ID
     uid = get_user_id_by_username(con, user.get("username"))
     if not uid:
         raise HTTPException(400, detail="User not found")
 
-    norm_lid = _mk_lid(lid)
+    # Look up vehicle by id (lid parameter is the vehicle ID from tests)
     row = con.execute(
-        "SELECT * FROM vehicles WHERE user_id = ? AND lower(replace(license_plate,'-','')) = ?",
-        (uid, norm_lid)
+        """
+        SELECT v.* FROM vehicles v
+        JOIN user_vehicles uv ON v.id = uv.vehicle_id
+        WHERE uv.user_id = ? AND v.id = ?
+        """,
+        (uid, int(lid))
     ).fetchone()
 
-    now = now_str()
     if not row:
-        # create new vehicle record for this user
-        if not payload.license_plate:
-            # if no explicit license_plate provided in body, use lid param
-            license_plate = lid
-        else:
-            license_plate = payload.license_plate
-        con.execute(
-            "INSERT INTO vehicles (user_id, license_plate, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-            (uid, license_plate, payload.name, now, now),
-        )
-        con.commit()
-        vid = con.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
-        vehicle = {"id": vid, "licenseplate": license_plate, "name": payload.name, "created_at": now, "updated_at": now}
-        return {"status": "Success", "vehicle": vehicle}
+        raise HTTPException(404, detail="Vehicle not found")
 
-    # Use database function to update existing vehicle
-    updates = {
-        "name": payload.name,
-        "updated_at": now,
-    }
-    success = update_vehicle(con, row["id"], updates)
-    if not success:
-        raise HTTPException(500, detail="Failed to update vehicle")
+    # Build update query dynamically for provided fields
+    updates = []
+    params = []
+    if payload.license_plate is not None:
+        updates.append("license_plate = ?")
+        params.append(payload.license_plate)
+    if payload.make is not None:
+        updates.append("make = ?")
+        params.append(payload.make)
+    if payload.model is not None:
+        updates.append("model = ?")
+        params.append(payload.model)
+    if payload.color is not None:
+        updates.append("color = ?")
+        params.append(payload.color)
+    if payload.year is not None:
+        updates.append("year = ?")
+        params.append(payload.year)
+
+    if updates:
+        params.append(row["id"])
+        sql = f"UPDATE vehicles SET {', '.join(updates)} WHERE id = ?"
+        con.execute(sql, params)
+        con.commit()
 
     updated = con.execute("SELECT * FROM vehicles WHERE id = ?", (row["id"],)).fetchone()
     v = dict(updated)
-    return {"status": "Success", "vehicle": {"id": v.get("id"), "licenseplate": v.get("license_plate"), "name": v.get("name"), "created_at": v.get("created_at"), "updated_at": v.get("updated_at") }}
+    return {
+        "id": v.get("id"),
+        "license_plate": v.get("license_plate"),
+        "make": v.get("make"),
+        "model": v.get("model"),
+        "color": v.get("color"),
+        "year": v.get("year"),
+        "created_at": v.get("created_at")
+    }
 
 
 @router.delete("/vehicles/{lid}")
@@ -116,20 +145,23 @@ def delete_vehicle_route(lid: str, user = Depends(require_session), con: sqlite3
     if not uid:
         raise HTTPException(400, detail="User not found")
 
-    norm_lid = _mk_lid(lid)
+    # Look up vehicle by id
     row = con.execute(
-        "SELECT id FROM vehicles WHERE user_id = ? AND lower(replace(license_plate,'-','')) = ?",
-        (uid, norm_lid)
+        """
+        SELECT v.id FROM vehicles v
+        JOIN user_vehicles uv ON v.id = uv.vehicle_id
+        WHERE uv.user_id = ? AND v.id = ?
+        """,
+        (uid, int(lid))
     ).fetchone()
     if not row:
         raise HTTPException(404, detail="Vehicle not found")
 
-    # Use database function to delete vehicle
-    success = delete_vehicle(con, row["id"])
-    if not success:
-        raise HTTPException(500, detail="Failed to delete vehicle")
+    # Delete from user_vehicles junction table
+    con.execute("DELETE FROM user_vehicles WHERE user_id = ? AND vehicle_id = ?", (uid, row["id"]))
+    con.commit()
 
-    return {"status": "Deleted"}
+    return {"message": "Vehicle deleted"}
 
 
 @router.get("/vehicles")
@@ -137,13 +169,28 @@ def list_own_vehicles(user = Depends(require_session), con: sqlite3.Connection =
     # Use database function to get user ID
     uid = get_user_id_by_username(con, user.get("username"))
     if not uid:
-        return {}
-    rows = con.execute("SELECT * FROM vehicles WHERE user_id = ? ORDER BY created_at DESC", (uid,)).fetchall()
-    result: Dict[str, Any] = {}
+        return []
+    rows = con.execute(
+        """
+        SELECT v.* FROM vehicles v
+        JOIN user_vehicles uv ON v.id = uv.vehicle_id
+        WHERE uv.user_id = ?
+        ORDER BY v.created_at DESC
+        """,
+        (uid,)
+    ).fetchall()
+    result = []
     for r in rows:
         v = dict(r)
-        key = _mk_lid(v.get("license_plate") or "")
-        result[key] = {"id": v.get("id"), "licenseplate": v.get("license_plate"), "name": v.get("name"), "created_at": v.get("created_at"), "updated_at": v.get("updated_at")}
+        result.append({
+            "id": v.get("id"),
+            "license_plate": v.get("license_plate"),
+            "make": v.get("make"),
+            "model": v.get("model"),
+            "color": v.get("color"),
+            "year": v.get("year"),
+            "created_at": v.get("created_at")
+        })
     return result
 
 
@@ -153,12 +200,20 @@ def list_user_vehicles(user_name: str, admin = Depends(require_admin), con: sqli
     uid = get_user_id_by_username(con, user_name)
     if not uid:
         raise HTTPException(404, detail="User not found")
-    rows = con.execute("SELECT * FROM vehicles WHERE user_id = ? ORDER BY created_at DESC", (uid,)).fetchall()
+    rows = con.execute(
+        """
+        SELECT v.* FROM vehicles v
+        JOIN user_vehicles uv ON v.id = uv.vehicle_id
+        WHERE uv.user_id = ?
+        ORDER BY v.created_at DESC
+        """,
+        (uid,)
+    ).fetchall()
     result: Dict[str, Any] = {}
     for r in rows:
         v = dict(r)
         key = _mk_lid(v.get("license_plate") or "")
-        result[key] = {"id": v.get("id"), "licenseplate": v.get("license_plate"), "name": v.get("name"), "created_at": v.get("created_at"), "updated_at": v.get("updated_at")}
+        result[key] = {"id": v.get("id"), "licenseplate": v.get("license_plate"), "name": v.get("make"), "created_at": v.get("created_at")}
     return result
 
 
@@ -172,12 +227,18 @@ def vehicle_entry(lid: str, data: Dict[str, Any] = Body(...), user = Depends(req
         raise HTTPException(400, detail="User not found")
 
     norm_lid = _mk_lid(lid)
-    vrow = con.execute("SELECT * FROM vehicles WHERE user_id = ? AND lower(replace(license_plate,'-','')) = ?", (uid, norm_lid)).fetchone()
+    vrow = con.execute(
+        """
+        SELECT v.* FROM vehicles v
+        JOIN user_vehicles uv ON v.id = uv.vehicle_id
+        WHERE uv.user_id = ? AND lower(replace(v.license_plate,'-','')) = ?
+        """,
+        (uid, norm_lid)
+    ).fetchone()
     if not vrow:
         raise HTTPException(400, detail={"error": "Vehicle does not exist", "data": lid})
     v = dict(vrow)
-    # no DB action required here in original; just accept
-    return {"status": "Accepted", "vehicle": {"licenseplate": v.get("license_plate"), "name": v.get("name") }}
+    return {"status": "Accepted", "vehicle": {"licenseplate": v.get("license_plate"), "name": v.get("make")}}
 
 
 @router.get("/vehicles/{vid}/reservations")
@@ -188,7 +249,14 @@ def vehicle_reservations(vid: str, user = Depends(require_session), con: sqlite3
         raise HTTPException(400, detail="User not found")
 
     norm_vid = _mk_lid(vid)
-    vrow = con.execute("SELECT * FROM vehicles WHERE user_id = ? AND lower(replace(license_plate,'-','')) = ?", (uid, norm_vid)).fetchone()
+    vrow = con.execute(
+        """
+        SELECT v.* FROM vehicles v
+        JOIN user_vehicles uv ON v.id = uv.vehicle_id
+        WHERE uv.user_id = ? AND lower(replace(v.license_plate,'-','')) = ?
+        """,
+        (uid, norm_vid)
+    ).fetchone()
     if not vrow:
         raise HTTPException(404, detail="Not found")
 
@@ -204,7 +272,14 @@ def vehicle_history(vid: str, user = Depends(require_session), con: sqlite3.Conn
         raise HTTPException(400, detail="User not found")
 
     norm_vid = _mk_lid(vid)
-    vrow = con.execute("SELECT * FROM vehicles WHERE user_id = ? AND lower(replace(license_plate,'-','')) = ?", (uid, norm_vid)).fetchone()
+    vrow = con.execute(
+        """
+        SELECT v.* FROM vehicles v
+        JOIN user_vehicles uv ON v.id = uv.vehicle_id
+        WHERE uv.user_id = ? AND lower(replace(v.license_plate,'-','')) = ?
+        """,
+        (uid, norm_vid)
+    ).fetchone()
     if not vrow:
         raise HTTPException(404, detail="Not found")
 

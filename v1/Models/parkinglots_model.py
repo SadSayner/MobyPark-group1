@@ -14,6 +14,14 @@ class Parking_lots_model:
 
     @staticmethod
     def from_dict(data):
+        # Handle both nested coordinates and flat lat/lng
+        if 'coordinates' in data:
+            lat = data['coordinates']['lat']
+            lng = data['coordinates']['lng']
+        else:
+            lat = data['lat']
+            lng = data['lng']
+
         return Parking_lots_model(
             id=data['id'],
             name=data['name'],
@@ -24,8 +32,8 @@ class Parking_lots_model:
             tariff=data['tariff'],
             daytariff=data['daytariff'],
             created_at=data['created_at'],
-            lat=data['coordinates']['lat'],
-            lng=data['coordinates']['lng']
+            lat=lat,
+            lng=lng
         )
 
     def to_dict(self):

@@ -19,7 +19,8 @@ import sys
 import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from storage_utils import *  # noqa
+from ..storage_utils import *  # noqa
+from .database_creation import create_database  # noqa
 
 Row = Dict[str, Any]
 Rows = Iterable[Row]
@@ -27,57 +28,6 @@ Rows = Iterable[Row]
 # -------------------------- Utilities --------------------------
 
 USER_ALIAS_TEMP_CSV = "v1/Database/usernames_temp.csv"
-
-
-def merge_dicts_numbered(a: dict, b: dict) -> dict:
-    """
-    Merge b into a. Keys zijn (bij voorkeur) numerieke strings of ints.
-    - Als key uit b vrij is -> direct plaatsen.
-    - Bij overlap -> geef volgende vrije numerieke key (max+1, max+2, ...)
-    Werkt O(n+m) i.p.v. O(n*m).
-    """
-    result = dict(a)
-
-    # Verzamel bestaande numerieke keys (string "123" of int 123)
-    used_nums = set()
-    for k in result.keys():
-        try:
-            used_nums.add(int(k))
-        except (ValueError, TypeError):
-            # Niet-numerieke sleutel in a negeren voor nummering
-            pass
-
-    next_num = (max(used_nums) + 1) if used_nums else 1
-
-    def take_next_free():
-        nonlocal next_num
-        # Sla door tot we een ongebruikt nummer hebben
-        while str(next_num) in result or next_num in result:
-            next_num += 1
-        key = str(next_num)
-        used_nums.add(next_num)
-        next_num += 1
-        return key
-
-    for k, v in b.items():
-        # Probeer directe plaatsing als key nog niet bestaat
-        if k not in result:
-            result[k] = v
-            # Als het een numerieke key is, update next_num indien nodig
-            try:
-                kn = int(k)
-                if kn >= next_num:
-                    next_num = kn + 1
-                used_nums.add(kn)
-            except (ValueError, TypeError):
-                pass
-            continue
-
-        # Conflict: geef een nieuw numeriek sleutel
-        new_k = take_next_free()
-        result[new_k] = v
-
-    return result
 
 
 def to_list_of_dicts(data: Union[Dict[str, Dict[str, Any]], List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
@@ -90,28 +40,6 @@ def to_list_of_dicts(data: Union[Dict[str, Dict[str, Any]], List[Dict[str, Any]]
 
 def _to_int_bool(v: Any) -> Any:
     return int(v) if isinstance(v, bool) else v
-
-
-def _to_int(v: Any) -> Union[int, None]:
-    if v is None:
-        return None
-    if isinstance(v, int):
-        return v
-    try:
-        return int(str(v).strip())
-    except Exception:
-        return None
-
-
-def _to_float(v: Any) -> Union[float, None]:
-    if v is None:
-        return None
-    if isinstance(v, float):
-        return v
-    try:
-        return float(str(v).strip())
-    except Exception:
-        return None
 
 
 def _normalize_rows(rows: List[Row], fields: Sequence[str]) -> List[Tuple]:
@@ -259,14 +187,6 @@ def read_user_alias_csv(csv_path: str = USER_ALIAS_TEMP_CSV) -> Dict[str, str]:
                 alias_map[alias] = canon
 
     return alias_map
-
-
-def _to_list_of_dicts(obj) -> List[dict]:
-    if isinstance(obj, list):
-        return obj
-    if isinstance(obj, dict):
-        return list(obj.values())
-    return []
 
 
 def build_aliases_from_user_json(
@@ -472,7 +392,7 @@ VALUES ({", ".join("?" for _ in VEHICLE_FIELDS)});
 
 def insert_vehicles(conn: sqlite3.Connection, rows: Union[List[Row], Dict[str, Row]], *, debug: bool = False) -> Dict[str, int]:
     """
-    Insert vehicles zonder user_id. 
+    Insert vehicles zonder user_id.
     Kenteken is UNIQUE -> OR IGNORE voorkomt duplicates.
     """
     lod = to_list_of_dicts(rows)
@@ -486,10 +406,9 @@ def insert_vehicles(conn: sqlite3.Connection, rows: Union[List[Row], Dict[str, R
     result["failed"] += missing
     return result
 
+
 # ------------------- PAYMENTS (FK-safe & initiator-prefer) ----------------
-
-
-PAY_FIELDS = (
+PAY_FIELDS: Tuple[str, ...] = (
     "transaction_id", "amount", "user_id", "session_id", "parking_lot_id",
     "created_at", "completed", "hash", "t_date", "t_method", "t_issuer", "t_bank"
 )
@@ -499,254 +418,321 @@ INSERT OR IGNORE INTO payments ({", ".join(PAY_FIELDS)})
 VALUES ({", ".join("?" for _ in PAY_FIELDS)});
 """
 
-
-def _dedupe_payments_by_tx(conn: sqlite3.Connection, *, debug: bool = True):
-    """
-    Keep the oldest row per transaction_id, drop the rest.
-    """
-    cur = conn.cursor()
-    # Drop exact duplicates leaving MIN(rowid)
-    cur.execute("""
-        DELETE FROM payments
-        WHERE rowid NOT IN (
-            SELECT MIN(rowid)
-            FROM payments
-            GROUP BY transaction_id
-        )
-    """)
-    if debug:
-        print(f"[PAY-DEDUP] after cleanup, kept one per transaction_id")
-    conn.commit()
+# -- Kleine utilities ---------------------------------------------------------
 
 
-def ensure_unique_index_payments(conn: sqlite3.Connection):
-    _dedupe_payments_by_tx(conn)
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE UNIQUE INDEX IF NOT EXISTS ux_payments_tx
-        ON payments (transaction_id);
-    """)
-    conn.commit()
-
-
-def _parse_dt_lenient(s: Any) -> str | None:
-    if not s:
+def _to_int(x: Any) -> Union[int, None]:
+    try:
+        if x is None or x == "":
+            return None
+        return int(float(x))
+    except Exception:
         return None
-    txt = str(s).strip()
-    parts = txt.split(":")
-    if len(parts) >= 3 and parts[-1].isdigit() and len(parts[-1]) >= 9:
-        txt = ":".join(parts[:-1])  # strip trailing epoch
-    from datetime import datetime
-    patterns = [
-        "%Y-%m-%d %H:%M:%S",
-        "%Y-%m-%d %H:%M",
-        "%d-%m-%Y %H:%M:%S",
-        "%d-%m-%Y %H:%M",
-        "%Y-%m-%dT%H:%M:%S",
-        "%Y-%m-%dT%H:%M:%S%z",
-        "%Y-%m-%dT%H:%M:%SZ",
-    ]
-    for p in patterns:
-        try:
-            if p.endswith("Z"):
-                dt = datetime.strptime(txt.replace(
-                    "Z", "+00:00"), "%Y-%m-%dT%H:%M:%S%z")
-                return dt.strftime("%Y-%m-%d %H:%M:%S")
-            dt = datetime.strptime(txt, p)
-            return dt.strftime("%Y-%m-%d %H:%M:%S")
-        except Exception:
-            pass
-    return None
+
+
+def _to_float(x: Any) -> Union[float, None]:
+    try:
+        if x is None or x == "":
+            return None
+        return float(x)
+    except Exception:
+        return None
+
+
+def _normalize_completed(x: Any) -> int:
+    # heel simpel: truthy -> 1, anders 0
+    if isinstance(x, bool):
+        return 1 if x else 0
+    if isinstance(x, (int, float)):
+        return 0 if float(x) == 0.0 else 1
+    if x is None:
+        return 0
+    s = str(x).strip().lower()
+    return 1 if s in {"1", "true", "t", "yes", "y", "done", "completed"} else 0
+
+
+def _to_list_of_dicts(rows: Union[List[Row], Dict[str, Row]]) -> List[Row]:
+    if isinstance(rows, dict):
+        return list(rows.values())
+    return list(rows or [])
+
+
+# -- Aliassen laden en username-resolving ------------------------------------
+
+
+def load_alias_map_from_csv(path: str) -> Dict[str, str]:
+    """
+    Verwacht CSV met kolommen: alias_username, canonical_username, ...
+    Geeft dict: lower(alias) -> canonical_username (zoals in DB 'users.username').
+    """
+    mapping: Dict[str, str] = {}
+    with open(path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            alias = (row.get("alias_username") or "").strip()
+            canon = (row.get("canonical_username") or "").strip()
+            if alias and canon:
+                mapping[alias.lower()] = canon
+    return mapping
+
+
+def _map_usernames_to_user_ids(conn: sqlite3.Connection, usernames: Set[str]) -> Dict[str, int]:
+    if not usernames:
+        return {}
+    # let op: IN (...) parameters
+    qmarks = ",".join("?" for _ in usernames)
+    sql = f"SELECT username, id FROM users WHERE username IN ({qmarks})"
+    cur = conn.cursor()
+    cur.execute(sql, tuple(usernames))
+    return {row[0].lower(): int(row[1]) for row in cur.fetchall()}
+
+
+# -- Uniek index + (optioneel) cleanup ---------------------------------------
+
+
+def ensure_unique_index_payments(conn: sqlite3.Connection) -> None:
+    """
+    Zorg voor unieke transaction_id. Als er nog dubbele rijen bestaan,
+    verwijder we alles behalve de oudste en maken dan de index aan.
+    """
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_payments_tx
+            ON payments (transaction_id);
+        """)
+        conn.commit()
+    except sqlite3.IntegrityError:
+        # bestaande duplicaten opruimen en opnieuw proberen
+        cur.execute("""
+            DELETE FROM payments
+            WHERE rowid NOT IN (
+                SELECT MIN(rowid) FROM payments GROUP BY transaction_id
+            );
+        """)
+        conn.commit()
+        cur.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_payments_tx
+            ON payments (transaction_id);
+        """)
+        conn.commit()
+
+# -- Kern: normaliseren + batch insert ---------------------------------------
+
+
+def normalize_payment_rows_simple(
+    raw_rows: Union[List[Row], Dict[str, Row]],
+    *,
+    username_to_id: Dict[str, int],
+) -> Tuple[List[Row], int]:
+    """
+    Minimalistische normalisatie:
+    - kiest velden uit PAY_FIELDS
+    - user_id uit row of via username/user/user_name + alias-resolve
+    - completed eenvoudig naar 0/1
+    - géén zware datum parsing: strings gaan zoals ze zijn
+    Retourneert (rows_ok, missing_count)
+    """
+    lod = _to_list_of_dicts(raw_rows)
+    out: List[Row] = []
+    missing = 0
+
+    for r in lod:
+        # 1) transaction_id & amount
+        tx = _first(r.get("transaction_id"), r.get("transaction"))
+        amount = _first(r.get("amount"), (r.get("t_data") or {}).get("amount"))
+
+        # 2) user_id
+        user_id = _to_int(_first(r.get("user_id")))
+        if user_id is None:
+            uname = _first(r.get("username"), r.get(
+                "user"), r.get("user_name"))
+            if isinstance(uname, str) and uname.strip():
+                user_id = username_to_id.get(uname.strip().lower())
+
+        # 3) sessie / parking lot
+        session_id = _to_int(r.get("session_id"))
+        parking_lot_id = _to_int(r.get("parking_lot_id"))
+
+        # 4) overige
+        t_data = r.get("t_data") or {}
+        norm = {
+            "transaction_id": tx,
+            "amount":         _to_float(amount),
+            "user_id":        user_id,
+            "session_id":     session_id,
+            "parking_lot_id": parking_lot_id,
+            # string laten zoals is
+            "created_at":     _first(r.get("created_at")),
+            "completed":      _normalize_completed(r.get("completed")),
+            "hash":           r.get("hash"),
+            "t_date":         _first(t_data.get("date")),   # idem
+            "t_method":       t_data.get("method"),
+            "t_issuer":       t_data.get("issuer"),
+            "t_bank":         t_data.get("bank"),
+        }
+
+        # 5) minimale verplichting
+        required = ("transaction_id", "amount", "user_id",
+                    "session_id", "parking_lot_id")
+        if any(norm[k] in (None, "") for k in required):
+            missing += 1
+            continue
+
+        out.append(norm)
+
+    return out, missing
 
 
 def _coerce_completed(val: Any) -> int:
+    """
+    Normalize various boolean-ish values into 0/1 for 'completed'.
+    """
     if isinstance(val, bool):
         return 1 if val else 0
     if isinstance(val, (int, float)):
         return 0 if float(val) == 0.0 else 1
     if val is None:
         return 0
-    s = str(val).strip()
-    if s == "":
+
+    s = str(val).strip().lower()
+    if s in {"true", "t", "yes", "y", "completed", "done", "1"}:
+        return 1
+    if s in {"false", "f", "no", "n", "0"}:
         return 0
-    if s.lower() in {"true", "yes", "y", "t", "completed", "done"}:
-        return 1
-    if _parse_dt_lenient(s):
-        return 1
+
+    # fallback: anything else counts as completed
     return 1
-
-
-def _map_usernames_to_user_ids(conn: sqlite3.Connection, usernames: Set[str]) -> Dict[str, int]:
-    if not usernames:
-        return {}
-    cur = conn.cursor()
-    cur.execute(
-        f"SELECT username, id FROM users WHERE username IN {_make_in_clause(len(usernames))}",
-        tuple(usernames)
-    )
-    return {row[0]: row[1] for row in cur.fetchall()}
-
-
-def _db_has_user_id(conn: sqlite3.Connection, uid: int) -> bool:
-    cur = conn.cursor()
-    cur.execute("SELECT 1 FROM users WHERE id=? LIMIT 1;", (uid,))
-    return cur.fetchone() is not None
-
-
-def _db_has_session_id(conn: sqlite3.Connection, sid: int) -> bool:
-    cur = conn.cursor()
-    cur.execute("SELECT 1 FROM sessions WHERE session_id=? LIMIT 1;", (sid,))
-    return cur.fetchone() is not None
-
-
-def _db_has_parking_lot_id(conn: sqlite3.Connection, pid: int) -> bool:
-    cur = conn.cursor()
-    cur.execute("SELECT 1 FROM parking_lots WHERE id=? LIMIT 1;", (pid,))
-    return cur.fetchone() is not None
-
-# (Optioneel) mapping van JSON sessions -> DB session_id via een bron-JSON
-
-
-def _build_session_natural_key_map(sessions_source: Union[List[Row], Dict[str, Row]]) -> Dict[int, Tuple[Any, Any, Any, Any]]:
-    """
-    Maak map: json_session_id -> (user_id, parking_lot_id, vehicle_id, started)
-    """
-    lod = to_list_of_dicts(sessions_source)
-    m: Dict[int, Tuple[Any, Any, Any, Any]] = {}
-    for s in lod:
-        sid = _to_int(s.get("session_id") or s.get("id"))
-        if sid is None:
-            continue
-        key = (
-            _to_int(s.get("user_id")),
-            _to_int(s.get("parking_lot_id")),
-            _to_int(s.get("vehicle_id")),
-            s.get("started"),
-        )
-        m[sid] = key
-    return m
-
-
-def _db_find_session_id_by_key(conn: sqlite3.Connection, key: Tuple[Any, Any, Any, Any]) -> Union[int, None]:
-    """
-    Vind DB session_id via natuurlijke sleutel (user_id, parking_lot_id, vehicle_id, started).
-    """
-    u, p, v, started = key
-    if None in (u, p, v) or not started:
-        return None
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT session_id FROM sessions WHERE user_id=? AND parking_lot_id=? AND vehicle_id=? AND started=? LIMIT 1;",
-        (u, p, v, started)
-    )
-    row = cur.fetchone()
-    return row[0] if row else None
-
-
-def normalize_payment_rows(
-    conn: sqlite3.Connection,
-    raw_rows: Union[List[Row], Dict[str, Row]],
-    *,
-    sessions_source: Union[List[Row], Dict[str, Row], None] = None,
-    debug: bool = False
-) -> Tuple[List[Row], int]:  # <- return (rows, fk_invalid_count)
-    lod = to_list_of_dicts(raw_rows)
-
-    need_usernames = {r.get("initiator") for r in lod if r.get("initiator")}
-    initiator_map = _map_usernames_to_user_ids(
-        conn, {u for u in need_usernames if u})
-
-    json_session_map: Dict[int, Tuple[Any, Any, Any, Any]] = {}
-    if sessions_source is not None:
-        json_session_map = _build_session_natural_key_map(sessions_source)
-
-    out: List[Row] = []
-    fk_invalid = 0
-
-    for r in lod:
-        t_data = r.get("t_data") or {}
-        transaction_id = r.get("transaction_id") or r.get("transaction")
-        amount = r.get("amount", t_data.get("amount"))
-
-        uid_from_json = _to_int(r.get("user_id"))
-        uid_from_initiator = initiator_map.get(
-            str(r["initiator"])) if r.get("initiator") else None
-        user_id = uid_from_initiator or uid_from_json
-
-        session_id = _to_int(r.get("session_id"))
-        if session_id is not None and not _db_has_session_id(conn, session_id):
-            if sessions_source is not None and session_id in json_session_map:
-                key = json_session_map[session_id]
-                new_sid = _db_find_session_id_by_key(conn, key)
-                if new_sid is not None:
-                    session_id = new_sid
-
-        parking_lot_id = _to_int(r.get("parking_lot_id"))
-
-        norm = {
-            "transaction_id": transaction_id,
-            "amount":         _to_float(amount),
-            "user_id":        _to_int(user_id) if user_id is not None else None,
-            "session_id":     session_id,
-            "parking_lot_id": parking_lot_id,
-            "created_at":     _parse_dt_lenient(r.get("created_at")) or r.get("created_at"),
-            "completed":      _coerce_completed(r.get("completed")),
-            "hash":           r.get("hash"),
-            "t_date":         _parse_dt_lenient(t_data.get("date")) or t_data.get("date"),
-            "t_method":       t_data.get("method"),
-            "t_issuer":       t_data.get("issuer"),
-            "t_bank":         t_data.get("bank"),
-        }
-
-        # FK sanity
-        fk_missing = []
-        if norm["user_id"] is None or not _db_has_user_id(conn, norm["user_id"]):
-            fk_missing.append("user_id")
-        if norm["session_id"] is None or not _db_has_session_id(conn, norm["session_id"]):
-            fk_missing.append("session_id")
-        if norm["parking_lot_id"] is None or not _db_has_parking_lot_id(conn, norm["parking_lot_id"]):
-            fk_missing.append("parking_lot_id")
-
-        if fk_missing:
-            fk_invalid += 1
-            if debug:
-                print(
-                    f"[PAY-FK] skipping tx={transaction_id} missing/invalid FKs: {fk_missing}")
-            continue
-
-        out.append(norm)
-
-    return out, fk_invalid
 
 
 def insert_payments(
     conn: sqlite3.Connection,
     rows: Union[List[Row], Dict[str, Row]],
     *,
-    sessions_source: Union[List[Row], Dict[str, Row], None] = None,
     debug: bool = False
 ) -> Dict[str, int]:
-    # Ensure uniqueness so duplicates become "skipped"
+    """
+    Minimalistische importer in dezelfde stijl als insert_users:
+    - transaction <- transaction_id (alias)
+    - user_id uit 'initiator' (fallback: username/user/user_name), met alias_map → canonical
+    - completed naar 0/1
+    - t_data flatten (date/method/issuer/bank)
+    - UNIQUE op transaction_id via OR IGNORE + vooraf aangemaakte UNIQUE index.
+    """
     ensure_unique_index_payments(conn)
 
-    rows_norm, fk_invalid = normalize_payment_rows(
-        conn, rows, sessions_source=sessions_source, debug=debug)
+    lod = to_list_of_dicts(rows)
 
-    # Count rows that miss required columns (incl. NULL tx_id, etc.) as failed
-    rows_ok, missing = _require_fields(rows_norm, PAY_FIELDS, debug=debug)
+    # ---- 1) verzamel alle relevante usernames (case-insensitive)
+    usernames: Set[str] = set()
+    for r in lod:
+        uname = _first(r.get("initiator"), r.get("username"),
+                       r.get("user"), r.get("user_name"))
+        if isinstance(uname, str) and uname.strip():
+            usernames.add(uname.strip().lower())
+
+    # 1a) directe DB-lookup (let op: helper geeft keys al lowercase terug)
+    direct_map = _map_usernames_to_user_ids(
+        conn, usernames)  # { lower(username): id }
+
+    # 1b) alias → canonical (beide lowercase) → DB-lookup
+    try:
+        alias_map: Dict[str, str] = read_user_alias_csv()
+    except Exception:
+        print(
+            "[insert_sessions] failed to read username alias CSV, proceeding without aliases")
+        alias_map = {}
+    canonical_needed: Set[str] = set()
+    for u_lc in usernames:
+        if u_lc not in direct_map:
+            canon = alias_map.get(u_lc)  # verwacht lowercase keys/values
+            if isinstance(canon, str) and canon.strip():
+                canonical_needed.add(canon.strip().lower())
+
+    canonical_map = {}
+    if canonical_needed:
+        canonical_map = _map_usernames_to_user_ids(
+            conn, canonical_needed)  # { lower(canonical): id }
+
+    # ---- 2) pre-normalisatie per rij
+    for r in lod:
+        # (a) transaction alias → transaction_id
+        if not r.get("transaction_id") and r.get("transaction"):
+            r["transaction_id"] = r.get("transaction")
+
+        # (b) amount uit hoofdveld of t_data.amount
+        t_data = r.get("t_data") or {}
+        r["amount"] = _to_float(_first(r.get("amount"), t_data.get("amount")))
+
+        # (c) user_id bepalen: initiator > username > user > user_name
+        if r.get("user_id") in (None, ""):
+            uname = _first(r.get("initiator"), r.get("username"),
+                           r.get("user"), r.get("user_name"))
+            uid = None
+            if isinstance(uname, str) and uname.strip():
+                key_lc = uname.strip().lower()
+                # 1. direct
+                uid = direct_map.get(key_lc)
+                # 2. alias → canonical → DB
+                if uid is None and alias_map:
+                    canon = alias_map.get(key_lc)
+                    if isinstance(canon, str) and canon.strip():
+                        uid = canonical_map.get(canon.strip().lower())
+            r["user_id"] = _to_int(uid)
+        else:
+            r["user_id"] = _to_int(r.get("user_id"))
+
+        # (d) ids
+        r["session_id"] = _to_int(r.get("session_id"))
+        r["parking_lot_id"] = _to_int(r.get("parking_lot_id"))
+
+        # (e) completed → 0/1
+        r["completed"] = _coerce_completed(r.get("completed"))
+
+        # (f) t_data flatten (laat created_at zoals aangeleverd)
+        if not r.get("t_date"):
+            r["t_date"] = t_data.get("date")
+        if not r.get("t_method"):
+            r["t_method"] = t_data.get("method")
+        if not r.get("t_issuer"):
+            r["t_issuer"] = t_data.get("issuer")
+        if not r.get("t_bank"):
+            r["t_bank"] = t_data.get("bank")
+
+    # ---- 3) vereiste velden afdwingen
+    PAY_REQUIRED = ("transaction_id", "amount", "user_id",
+                    "session_id", "parking_lot_id")
+    rows_ok, missing = _require_fields(lod, PAY_REQUIRED, debug=debug)
+
+    # ---- 4) volgorde normaliseren en batch-insert
     data = _normalize_rows(rows_ok, PAY_FIELDS)
-
     result = _batch_insert_per_row(
         conn, SQL_INSERT_PAYMENTS_IGNORE, data, debug=debug)
+    result["failed"] += missing
 
-    # Add in our pre-insert failures
-    result["failed"] += (missing + fk_invalid)
+    # consistentie met andere rapportages
+    result["duplicates"] = result.pop("skipped", 0)
+
+    if debug:
+        # toon 10 onopgeloste initiators (na alias en direct lookup)
+        unresolved = []
+        for r in lod:
+            if r in rows_ok:
+                continue  # deze gingen al door
+            uname = _first(r.get("initiator"), r.get("username"),
+                           r.get("user"), r.get("user_name"))
+            if isinstance(uname, str) and uname.strip():
+                key_lc = uname.strip().lower()
+                if (key_lc not in direct_map) and (alias_map.get(key_lc, "").strip().lower() not in canonical_map):
+                    unresolved.append(uname)
+        if unresolved:
+            print(
+                f"[PAY][DEBUG] unresolved usernames (sample up to 10): {unresolved[:10]}")
+
     return result
 
 
 # ------------------- RESERVATIONS (with email remap) ----------------------
-
-
 # NB: 'id' is deel van RES_FIELDS en wordt gevuld uit de JSON
 RES_FIELDS = ("id", "user_id", "parking_lot_id", "vehicle_id",
               "start_time", "duration", "status", "created_at")
@@ -937,28 +923,6 @@ def _iso_utc(dtobj):
     )
 
 
-def _map_usernames_to_user_ids(conn, usernames: Set[str]) -> Dict[str, int]:
-    """
-    Case-insensitive mapping of username -> user_id from the users table.
-    Keys in the returned dict are LOWERCASE usernames.
-    """
-    cleaned = sorted({(u or "").strip().lower()
-                     for u in usernames if (u or "").strip()})
-    if not cleaned:
-        return {}
-
-    placeholders = ",".join("?" for _ in cleaned)
-    sql = f"SELECT id, username FROM users WHERE LOWER(username) IN ({placeholders})"
-    cur = conn.execute(sql, cleaned)
-
-    out: Dict[str, int] = {}
-    for row in cur.fetchall():
-        uid, uname = row[0], row[1]
-        if uname:
-            out[str(uname).strip().lower()] = int(uid)
-    return out
-
-
 def _first(*vals):
     """Return the first non-empty value (treat '' as empty)."""
     for v in vals:
@@ -987,6 +951,8 @@ def insert_parking_sessions(conn, rows: Union[List[dict], Dict[str, dict]], *, d
     try:
         alias_map: Dict[str, str] = read_user_alias_csv()
     except Exception:
+        print(
+            "[insert_sessions] failed to read username alias CSV, proceeding without aliases")
         alias_map = {}
 
     # -------- Gather session usernames ----------
@@ -1059,8 +1025,10 @@ def insert_parking_sessions(conn, rows: Union[List[dict], Dict[str, dict]], *, d
         # Validation
         if None in (uid, parking_lot_id, started_iso, duration_minutes, payment_status):
             failed_missing += 1
-            if debug:
+            if debug and failed_missing <= 10:
                 print(f"[insert_sessions] missing fields for row: {r}")
+                print(uid, parking_lot_id, started_iso,
+                      duration_minutes, payment_status)
             continue
 
         prepared.append({
@@ -1076,6 +1044,31 @@ def insert_parking_sessions(conn, rows: Union[List[dict], Dict[str, dict]], *, d
         conn, SQL_INSERT_SESSIONS_IGNORE, data, debug=debug)
     result["failed"] += failed_missing
     return result
+
+
+def load_parking_sessions(debug=False):
+    all_sessions = []
+
+    start_time = datetime.datetime.now()
+
+    for i in range(1, 1501):
+        file_path = f"v1/data/pdata/p{i}-sessions.json"
+        try:
+            data = load_data(file_path)
+            all_sessions.extend(data.values())
+        except FileNotFoundError:
+            pass
+
+    if debug:
+        print(
+            f"Loaded total {len(all_sessions)} sessions in {(datetime.datetime.now() - start_time).total_seconds():.2f} seconds.")
+    return all_sessions
+
+
+def make_batches(all_info, batch_size: int = 400000, debug: bool = False):
+    all_items = to_list_of_dicts(all_info)
+    for start in range(0, len(all_items), batch_size):
+        yield all_items[start:start + batch_size]
 
 
 # ------------------- Wipe table ----------------------------
@@ -1096,60 +1089,42 @@ def wipe_table(conn: sqlite3.Connection, table_name: str, *, reset_autoincrement
     conn.commit()
     print(f"Tabel '{table_name}' gewist.")
 
-# -------------------------- __all__ ------------------------
+
+def fill_database():
+    if not os.path.exists('v1/Database/MobyPark.db'):
+        print(f"Database 'v1/Database/MobyPark.db' bestaat niet.")
+        create_database('v1/Database/MobyPark.db')
+
+    conn = get_connection()
+
+    parking_lots = load_data("v1/data/parking-lots.json")
+    print("lots:", insert_parking_lots(conn, parking_lots, debug=True))
+
+    users = load_data("v1/data/users.json")
+    print("users:", insert_users(conn, users, debug=True))
+
+    vehicles = load_data("v1/data/vehicles.json")
+    print("vehicles:", insert_vehicles(conn, vehicles, debug=True))
+
+    reservations = load_data("v1/data/reservations.json")
+    print("reservations:", insert_reservations(
+        conn, reservations, users_source=users, debug=True))
+
+    all_sessions = load_parking_sessions(True)
+    batches = make_batches(all_sessions, 400000, debug=True)
+    for batch in batches:
+        result = insert_parking_sessions(conn, batch, debug=True)
+        print(
+            f"In batch: inserted={result['inserted']}, failed={result['failed']}")
+
+    payments = load_data("v1/data/payments.json")
+    batches = make_batches(payments, 400000, debug=True)
+    for batch in batches:
+        result = insert_payments(conn, batch, debug=True)
+        print(
+            f"In batch: inserted={result['inserted']}, failed={result['failed']}, duplicates={result.get('duplicates', 0)}")
+    delete_user_alias_csv()
 
 
-__all__ = [
-    # inserts
-    "insert_users",
-    "insert_parking_lots",
-    "insert_vehicles",
-    "insert_payments",
-    "insert_reservations",
-    "calculate_duration",
-    "extract_userid_to_email",
-    "map_emails_to_db_user_ids",
-    "remap_reservation_user_ids_by_email",
-    "wipe_table",
-]
-
-conn = get_connection()
-
-# parking_lots = load_data("v1/data/parking-lots.json")
-# print("lots:", insert_parking_lots(conn, parking_lots, debug=True))
-
-# users = load_data("v1/data/users.json")
-# print("users:", insert_users(conn, users, debug=True))
-
-# vehicles = load_data("v1/data/vehicles.json")
-# print("vehicles:", insert_vehicles(conn, vehicles, debug=True))
-
-# reservations = load_data("v1/data/reservations.json")
-# print("reservations:", insert_reservations(
-#     conn, reservations, users_source=users, debug=True))
-
-wipe_table(conn, "sessions")
-
-all_sessions = []
-
-for i in range(1, 1501):
-    file_path = f"v1/data/pdata/p{i}-sessions.json"
-    try:
-        data = load_data(file_path)
-        # Voeg ALLE values toe, dict -> list
-        all_sessions.extend(data.values())
-    except FileNotFoundError:
-        # Veilig overslaan als een bestand ontbreekt
-        pass
-
-batch_size = 200000
-for start in range(0, len(all_sessions), batch_size):
-    batch = all_sessions[start:start + batch_size]
-    result = insert_parking_sessions(conn, batch, debug=True)
-    print(
-        f"In batch {start // batch_size + 1}: inserted={result['inserted']}, failed={result['failed']}")
-
-    # delete_user_alias_csv()
-
-    # payments = load_data("v1/data/payments2.json")
-    # print("payments:", insert_payments(conn, payments, debug=True))
+if __name__ == "__main__":
+    fill_database()

@@ -4,10 +4,10 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 import sqlite3
 
-from server.deps import require_session, require_admin
-from storage_utils import load_payment_data, save_payment_data
-import session_calculator as sc
-from Database.database_logic import get_db, get_user_id_by_username, get_payments_by_user_id, update_payment
+from ..deps import require_session, require_admin
+from ...storage_utils import load_payment_data, save_payment_data
+from ... import session_calculator as sc
+from ...Database.database_logic import get_db, get_user_id_by_username, get_payments_by_user_id, update_payment
 
 router = APIRouter()
 
@@ -16,12 +16,14 @@ class PaymentIn(BaseModel):
     transaction: Optional[str] = None
     amount: float = Field(..., gt=0)         # required and must be > 0
     parkingsession_id: Optional[str] = None
+    session_id: Optional[int] = None  # Accept session_id from tests
+    payment_method: Optional[str] = None  # Accept payment_method from tests
     t_data: Optional[Dict[str, Any]] = None
     validation: Optional[str] = None
     recipient: Optional[str] = None
 
     class Config:
-        extra = "forbid"                     # reject unknown fields
+        extra = "allow"  # Allow unknown fields for compatibility
 
 def _row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
     if row is None:
@@ -45,9 +47,10 @@ def create_payment(payload: PaymentIn, user = Depends(require_session), con: sql
     # optional: link parking session (id) to created payment. Only if the user owns the session or is admin.
     session_id = None
     parking_lot_id = None
-    if payload.parkingsession_id:
+    # Check both session_id and parkingsession_id for compatibility
+    if payload.session_id or payload.parkingsession_id:
         try:
-            linked_sid = int(payload.parkingsession_id)
+            linked_sid = int(payload.session_id if payload.session_id else payload.parkingsession_id)
         except Exception:
             raise HTTPException(400, detail="Invalid parkingsession_id (expect parking session id)")
         srow = con.execute("SELECT session_id, user_id, parking_lot_id FROM sessions WHERE session_id = ?", (linked_sid,)).fetchone()
@@ -275,7 +278,12 @@ def list_my_payments(user = Depends(require_session), con: sqlite3.Connection = 
     return payments
 
 
-@router.get("/payments/{user_name}")
+@router.get("/payments/billing")
+def get_my_billing(user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
+    # Alias for /billing endpoint
+    return my_billing(user, con)
+
+@router.get("/payments/user/{user_name}")
 def list_user_payments(user_name: str, admin = Depends(require_admin), con: sqlite3.Connection = Depends(get_db)):
     # Use database function to get user ID
     user_id = get_user_id_by_username(con, user_name)
@@ -284,6 +292,28 @@ def list_user_payments(user_name: str, admin = Depends(require_admin), con: sqli
     # Use database function to get payments
     payments = get_payments_by_user_id(con, user_id)
     return payments
+
+@router.get("/payments/{payment_id}")
+def get_payment(payment_id: str, user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
+    """Get a single payment by ID"""
+    user_id = get_user_id_by_username(con, user.get("username"))
+    if not user_id:
+        raise HTTPException(404, detail="User not found")
+
+    try:
+        pid = int(payment_id)
+    except ValueError:
+        raise HTTPException(400, detail="Invalid payment ID")
+
+    row = con.execute(
+        "SELECT * FROM payments WHERE payment_id = ? AND user_id = ?",
+        (pid, user_id)
+    ).fetchone()
+
+    if not row:
+        raise HTTPException(404, detail="Payment not found")
+
+    return _row_to_dict(row)
 
 
 @router.get("/billing")

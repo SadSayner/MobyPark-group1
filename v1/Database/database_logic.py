@@ -5,10 +5,10 @@ import os
 import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from Models.parkinglots_model import Parking_lots_model  # noqa
-from Models.user_model import User_model  # noqa
-from Models.vehicle_model import Vehicle_model  # noqa
-from Models.reservations_model import Reservations_model  # noqa
+from ..Models.parkinglots_model import Parking_lots_model  # noqa
+from ..Models.user_model import User_model  # noqa
+from ..Models.vehicle_model import Vehicle_model  # noqa
+from ..Models.reservations_model import Reservations_model  # noqa
 
 _VALID_PAYMENT_STATUSES = {"unpaid", "pending", "paid", "failed"}
 _VALID_STATUSES = {"pending", "confirmed", "cancelled"}
@@ -161,7 +161,7 @@ def get_all_parking_lots(con: sqlite3.Connection):
     sql = "SELECT * FROM parking_lots"
     cur = con.execute(sql)
     rows = cur.fetchall()
-    return [Parking_lots_model.from_dict(**dict(row)) for row in rows]
+    return [Parking_lots_model.from_dict(dict(row)) for row in rows]
 
 
 def get_parking_lot_by_id(con: sqlite3.Connection, lot_id: int):
@@ -180,7 +180,7 @@ def get_parking_lot_by_id(con: sqlite3.Connection, lot_id: int):
     cur = con.execute(sql, (lot_id,))
     row = cur.fetchone()
     if row:
-        return Parking_lots_model.from_dict(**dict(row))
+        return Parking_lots_model.from_dict(dict(row))
     return None
 
 
