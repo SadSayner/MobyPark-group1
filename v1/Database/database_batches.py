@@ -187,29 +187,36 @@ def map_emails_to_db_user_ids(
 # ------------------- CSV Helpers ---------------------------
 
 
-def read_user_alias_csv(csv_path: str = USER_ALIAS_TEMP_CSV) -> Dict[str, str]:
+def read_user_alias_csv(csv_path: str = USER_ALIAS_TEMP_CSV) -> Dict[str, dict]:
     """
-    Reads usernames_temp.csv and returns:
-      lower(alias_username) -> lower(canonical_username)
+    Reads usernames_temp.csv and returns a dict:
+      lower(alias_username) -> {
+          "username": lower(canonical_username),
+          "canonical_id": int
+      }
 
-    Blank canonical_username rows are ignored (still unresolved = manual fix needed)
+    Rows without canonical_username are ignored.
     """
-    alias_map: Dict[str, str] = {}
+    alias_map: Dict[str, dict] = {}
 
     if not os.path.exists(csv_path):
-        return alias_map  # no file -> no aliases
+        return alias_map
 
     with open(csv_path, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
+
         for row in reader:
             alias = (row.get("alias_username") or "").strip().lower()
             canon = (row.get("canonical_username") or "").strip().lower()
-            canon_id = (row.get("canonical_id") or None).strip().lower()
+
+            # Safely handle canonical_id
+            canon_id_raw = row.get("canonical_id")
+            canon_id = (
+                int(canon_id_raw) if canon_id_raw and canon_id_raw.isdigit() else None
+            )
+
             if alias and canon:
-                alias_map[alias] = {
-                    "username": canon,
-                    "canonical_id": int(canon_id) if canon_id else None,
-                }
+                alias_map[alias] = {"username": canon, "canonical_id": canon_id}
 
     return alias_map
 
@@ -737,7 +744,7 @@ def insert_payments(
 
     # 1b) alias → canonical (beide lowercase) → DB-lookup
     try:
-        alias_map: Dict[str, str] = read_user_alias_csv()
+        alias_map: Dict[str, Dict] = read_user_alias_csv()
     except Exception:
         print(
             "[insert_sessions] failed to read username alias CSV, proceeding without aliases"
@@ -746,7 +753,7 @@ def insert_payments(
     canonical_needed: Set[str] = set()
     for u_lc in usernames:
         if u_lc not in direct_map:
-            canon = alias_map.get(u_lc)  # verwacht lowercase keys/values
+            canon = alias_map.get(u_lc)["username"]  # verwacht lowercase keys/values
             if isinstance(canon, str) and canon.strip():
                 canonical_needed.add(canon.strip().lower())
 
@@ -778,7 +785,7 @@ def insert_payments(
                 uid = direct_map.get(key_lc)
                 # 2. alias → canonical → DB
                 if uid is None and alias_map:
-                    canon = alias_map.get(key_lc)
+                    canon = alias_map.get(key_lc)["username"]
                     if isinstance(canon, str) and canon.strip():
                         uid = canonical_map.get(canon.strip().lower())
             r["user_id"] = _to_int(uid)
@@ -832,7 +839,8 @@ def insert_payments(
             if isinstance(uname, str) and uname.strip():
                 key_lc = uname.strip().lower()
                 if (key_lc not in direct_map) and (
-                    alias_map.get(key_lc, "").strip().lower() not in canonical_map
+                    alias_map.get(key_lc, "")["username"].strip().lower()
+                    not in canonical_map
                 ):
                     unresolved.append(uname)
         if unresolved:
@@ -1073,7 +1081,7 @@ def insert_parking_sessions(
 
     # -------- Load CSV alias map ----------
     try:
-        alias_map: Dict[str, str] = read_user_alias_csv()
+        alias_map: Dict[str, Dict] = read_user_alias_csv()
     except Exception:
         print(
             "[insert_sessions] failed to read username alias CSV, proceeding without aliases"
@@ -1093,7 +1101,9 @@ def insert_parking_sessions(
     # For unresolved ones: check CSV alias
     unresolved = {u for u in session_usernames if u.lower() not in username_map}
     canonical_usernames_needed = {
-        alias_map.get(u.lower()) for u in unresolved if alias_map.get(u.lower())
+        alias_map.get(u.lower())["username"]
+        for u in unresolved
+        if alias_map.get(u.lower())["username"]
     }
     canonical_usernames_needed.discard(None)
 
@@ -1113,7 +1123,7 @@ def insert_parking_sessions(
             uname_l = uname.strip().lower()
             uid = username_map.get(uname_l)
             if uid is None:
-                canon_l = alias_map.get(uname_l)
+                canon_l = alias_map.get(uname_l)["username"]
                 if canon_l:
                     uid = canonical_map.get(canon_l)
 
