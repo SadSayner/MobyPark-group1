@@ -18,7 +18,7 @@ from datetime import *
 import sys
 import os
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from storage_utils import *  # noqa
 from database_creation import create_database  # noqa
 
@@ -30,7 +30,9 @@ Rows = Iterable[Row]
 USER_ALIAS_TEMP_CSV = "v1/Database/usernames_temp.csv"
 
 
-def to_list_of_dicts(data: Union[Dict[str, Dict[str, Any]], List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+def to_list_of_dicts(
+    data: Union[Dict[str, Dict[str, Any]], List[Dict[str, Any]]],
+) -> List[Dict[str, Any]]:
     if isinstance(data, list):
         return data
     if isinstance(data, dict):
@@ -64,7 +66,7 @@ def _batch_insert_per_row(
     rows: List[Tuple],
     *,
     debug: bool = False,
-    debug_limit: int = 10
+    debug_limit: int = 10,
 ) -> Dict[str, int]:
     inserted = skipped = failed = 0
     cur = conn.cursor()
@@ -92,7 +94,13 @@ def _batch_insert_per_row(
     return {"inserted": inserted, "skipped": skipped, "failed": failed}
 
 
-def _require_fields(rows: List[Row], required: Sequence[str], *, debug: bool = False, debug_limit: int = 10) -> Tuple[List[Row], int]:
+def _require_fields(
+    rows: List[Row],
+    required: Sequence[str],
+    *,
+    debug: bool = False,
+    debug_limit: int = 10,
+) -> Tuple[List[Row], int]:
     ok: List[Row] = []
     missing = 0
     shown = 0
@@ -102,7 +110,8 @@ def _require_fields(rows: List[Row], required: Sequence[str], *, debug: bool = F
             missing += 1
             if debug and shown < debug_limit:
                 print(
-                    f"[REQUIRE] ontbrekend: {miss} — aanwezige keys: {list(r.keys())}")
+                    f"[REQUIRE] ontbrekend: {miss} — aanwezige keys: {list(r.keys())}"
+                )
                 shown += 1
         else:
             ok.append(r)
@@ -111,6 +120,7 @@ def _require_fields(rows: List[Row], required: Sequence[str], *, debug: bool = F
 
 def _make_in_clause(n: int) -> str:
     return "(" + ",".join(["?"] * n) + ")"
+
 
 # ---------------------- DateTime helpers --------------------
 
@@ -121,24 +131,31 @@ def calculate_duration(start_iso, end_iso):
     Assumes 'YYYY-MM-DDTHH:MM:SSZ' or with %z offset; trims to seconds.
     """
     try:
-        start_time = datetime.datetime.strptime(start_iso.replace(
-            "Z", "+00:00"), "%Y-%m-%dT%H:%M:%S%z")
-        start_time = datetime.datetime.strptime(start_time.strftime(
-            '%Y-%m-%d %H:%M:%S'), '%Y-%m-%d %H:%M:%S')
+        start_time = datetime.datetime.strptime(
+            start_iso.replace("Z", "+00:00"), "%Y-%m-%dT%H:%M:%S%z"
+        )
+        start_time = datetime.datetime.strptime(
+            start_time.strftime("%Y-%m-%d %H:%M:%S"), "%Y-%m-%d %H:%M:%S"
+        )
 
-        end_time = datetime.datetime.strptime(end_iso.replace(
-            "Z", "+00:00"), "%Y-%m-%dT%H:%M:%S%z")
-        end_time = datetime.datetime.strptime(end_time.strftime(
-            '%Y-%m-%d %H:%M:%S'), '%Y-%m-%d %H:%M:%S')
+        end_time = datetime.datetime.strptime(
+            end_iso.replace("Z", "+00:00"), "%Y-%m-%dT%H:%M:%S%z"
+        )
+        end_time = datetime.datetime.strptime(
+            end_time.strftime("%Y-%m-%d %H:%M:%S"), "%Y-%m-%d %H:%M:%S"
+        )
         minutes = int((end_time - start_time).total_seconds() / 60)
         return minutes
     except Exception:
         return None
 
+
 # ---------------------- Users helpers (email remap) -----------------------
 
 
-def extract_userid_to_email(users_source: Union[List[Row], Dict[str, Row]]) -> Dict[int, str]:
+def extract_userid_to_email(
+    users_source: Union[List[Row], Dict[str, Row]],
+) -> Dict[int, str]:
     """
     Build a map from the *JSON* users dataset: json_user_id -> email (first non-empty).
     """
@@ -152,7 +169,9 @@ def extract_userid_to_email(users_source: Union[List[Row], Dict[str, Row]]) -> D
     return result
 
 
-def map_emails_to_db_user_ids(conn: sqlite3.Connection, emails: Set[str]) -> Dict[str, int]:
+def map_emails_to_db_user_ids(
+    conn: sqlite3.Connection, emails: Set[str]
+) -> Dict[str, int]:
     """
     Map email -> MIN(id) in DB users (the 'first' user for that email).
     """
@@ -163,6 +182,8 @@ def map_emails_to_db_user_ids(conn: sqlite3.Connection, emails: Set[str]) -> Dic
     sql = f"SELECT email, MIN(id) as id FROM users WHERE email IN {placeholders} GROUP BY email"
     cur.execute(sql, tuple(emails))
     return {row[0]: row[1] for row in cur.fetchall()}
+
+
 # ------------------- CSV Helpers ---------------------------
 
 
@@ -183,8 +204,12 @@ def read_user_alias_csv(csv_path: str = USER_ALIAS_TEMP_CSV) -> Dict[str, str]:
         for row in reader:
             alias = (row.get("alias_username") or "").strip().lower()
             canon = (row.get("canonical_username") or "").strip().lower()
+            canon_id = (row.get("canonical_id") or None).strip().lower()
             if alias and canon:
-                alias_map[alias] = canon
+                alias_map[alias] = {
+                    "username": canon,
+                    "canonical_id": int(canon_id) if canon_id else None,
+                }
 
     return alias_map
 
@@ -204,32 +229,44 @@ def build_aliases_from_user_json(
     users = _to_list_of_dicts(raw)
 
     seen_email: Dict[str, str] = {}  # lower(email) -> canonical username
-    alias_rows: List[Tuple[str, str, str]] = []
+    id_user: Dict[str, id] = {}  # lower(email) -> user id
+    alias_rows: List[Tuple[str, str, int, int, str]] = []
 
     for u in users:
         uname = (u.get("username") or "").strip()
         email = (u.get("email") or "").strip()
-
+        user_id = (u.get("id") or None).strip()
         if not uname or not email:
             continue
 
         email_l = email.lower()
-        uname_l = uname.lower()
 
         if email_l not in seen_email:
             # First user for this email → canonical
             seen_email[email_l] = uname
+            id_user[email_l] = user_id
         else:
             # Duplicate email → this username becomes an alias
             canonical_uname = seen_email[email_l]
-            alias_rows.append((uname, canonical_uname, "duplicate email"))
+            canonical_id = id_user[email_l]
+            alias_rows.append(
+                (
+                    uname,
+                    canonical_uname,
+                    user_id,
+                    canonical_id,
+                    "duplicate email",
+                )
+            )
 
     # Avoid overwriting folder errors
     os.makedirs(os.path.dirname(out_csv_path) or ".", exist_ok=True)
 
     with open(out_csv_path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
-        w.writerow(["alias_username", "canonical_username", "note"])
+        w.writerow(
+            ["alias_username", "canonical_username", "alias_id", "canonical_id", "note"]
+        )
         alias_rows_sorted = sorted(alias_rows, key=lambda r: r[0].lower())
         w.writerows(alias_rows_sorted)
 
@@ -249,11 +286,21 @@ def delete_user_alias_csv(csv_path: str = USER_ALIAS_TEMP_CSV) -> bool:
         return True
     return False
 
+
 # ------------------- USERS ------------------------------
 
 
-USERS_FIELDS = ("username", "password", "name", "email", "phone",
-                "role", "created_at", "birth_year", "active")
+USERS_FIELDS = (
+    "username",
+    "password",
+    "name",
+    "email",
+    "phone",
+    "role",
+    "created_at",
+    "birth_year",
+    "active",
+)
 
 SQL_INSERT_USERS_IGNORE = f"""
 INSERT OR IGNORE INTO users ({", ".join(USERS_FIELDS)})
@@ -261,9 +308,13 @@ VALUES ({", ".join("?" for _ in USERS_FIELDS)});
 """
 
 
-def insert_users(conn: sqlite3.Connection, rows: Union[List[Row], Dict[str, Row]], *, debug: bool = False) -> Dict[str, int]:
-    build_aliases_from_user_json(
-        "v1/data/users.json", USER_ALIAS_TEMP_CSV)
+def insert_users(
+    conn: sqlite3.Connection,
+    rows: Union[List[Row], Dict[str, Row]],
+    *,
+    debug: bool = False,
+) -> Dict[str, int]:
+    build_aliases_from_user_json("v1/data/users.json", USER_ALIAS_TEMP_CSV)
     """
     Verwacht alle NOT NULL velden. Vult default role='USER' als niet gegeven.
     Email is UNIQUE in DB -> duplicates worden 'skipped' via OR IGNORE.
@@ -280,18 +331,27 @@ def insert_users(conn: sqlite3.Connection, rows: Union[List[Row], Dict[str, Row]
     rows_ok, missing = _require_fields(lod, USERS_FIELDS, debug=debug)
     data = _normalize_rows(rows_ok, USERS_FIELDS)
 
-    result = _batch_insert_per_row(
-        conn, SQL_INSERT_USERS_IGNORE, data, debug=debug
-    )
+    result = _batch_insert_per_row(conn, SQL_INSERT_USERS_IGNORE, data, debug=debug)
     result["failed"] += missing
 
     return result
 
+
 # ------------------- PARKING LOTS --------------------------
 
 
-PARKING_FIELDS = ("name", "location", "address", "capacity",
-                  "reserved", "tariff", "daytariff", "created_at", "lat", "lng")
+PARKING_FIELDS = (
+    "name",
+    "location",
+    "address",
+    "capacity",
+    "reserved",
+    "tariff",
+    "daytariff",
+    "created_at",
+    "lat",
+    "lng",
+)
 
 SQL_INSERT_PARKING = f"""
 INSERT OR IGNORE INTO parking_lots ({", ".join(PARKING_FIELDS)})
@@ -303,7 +363,8 @@ def _dedupe_parking_lots(conn: sqlite3.Connection, *, debug: bool = True):
     cur = conn.cursor()
     conn.execute("PRAGMA foreign_keys=OFF;")
     try:
-        cur.execute("""
+        cur.execute(
+            """
             WITH groups AS (
               SELECT lower(trim(name)) AS k1,
                      lower(trim(address)) AS k2,
@@ -320,7 +381,8 @@ def _dedupe_parking_lots(conn: sqlite3.Connection, *, debug: bool = True):
              AND lower(trim(p.address)) = g.k2
             WHERE p.id <> g.keep_id
             ORDER BY g.keep_id, p.id;
-        """)
+        """
+        )
         rows = cur.fetchall()
         if debug and rows:
             print(f"[PARKING-DEDUP] merging {len(rows)} duplicates")
@@ -328,11 +390,17 @@ def _dedupe_parking_lots(conn: sqlite3.Connection, *, debug: bool = True):
         for dup_id, keep_id in rows:
             # repoint FKs that reference parking_lots(id)
             cur.execute(
-                "UPDATE OR IGNORE sessions SET parking_lot_id=? WHERE parking_lot_id=?", (keep_id, dup_id))
+                "UPDATE OR IGNORE sessions SET parking_lot_id=? WHERE parking_lot_id=?",
+                (keep_id, dup_id),
+            )
             cur.execute(
-                "UPDATE OR IGNORE reservations SET parking_lot_id=? WHERE parking_lot_id=?", (keep_id, dup_id))
+                "UPDATE OR IGNORE reservations SET parking_lot_id=? WHERE parking_lot_id=?",
+                (keep_id, dup_id),
+            )
             cur.execute(
-                "UPDATE OR IGNORE payments SET parking_lot_id=? WHERE parking_lot_id=?", (keep_id, dup_id))
+                "UPDATE OR IGNORE payments SET parking_lot_id=? WHERE parking_lot_id=?",
+                (keep_id, dup_id),
+            )
             cur.execute("DELETE FROM parking_lots WHERE id=?", (dup_id,))
         conn.commit()
     finally:
@@ -342,10 +410,12 @@ def _dedupe_parking_lots(conn: sqlite3.Connection, *, debug: bool = True):
 def ensure_unique_index_parking_lots(conn: sqlite3.Connection):
     _dedupe_parking_lots(conn)
     cur = conn.cursor()
-    cur.execute("""
+    cur.execute(
+        """
         CREATE UNIQUE INDEX IF NOT EXISTS ux_parking_lots_name_addr
         ON parking_lots (name COLLATE NOCASE, address COLLATE NOCASE);
-    """)
+    """
+    )
     conn.commit()
 
 
@@ -354,22 +424,26 @@ def normalize_parking_rows(raw_rows: Union[List[Row], Dict[str, Row]]) -> List[R
     out: List[Row] = []
     for r in lod:
         coords = r.get("coordinates") or {}
-        out.append({
-            "name":       r.get("name"),
-            "location":   r.get("location"),
-            "address":    r.get("address"),
-            "capacity":   _to_int(r.get("capacity")),
-            "reserved":   _to_int(r.get("reserved")),
-            "tariff":     _to_float(r.get("tariff")),
-            "daytariff":  _to_int(r.get("daytariff")),
-            "created_at": r.get("created_at"),
-            "lat":        _to_float(coords.get("lat")),
-            "lng":        _to_float(coords.get("lng")),
-        })
+        out.append(
+            {
+                "name": r.get("name"),
+                "location": r.get("location"),
+                "address": r.get("address"),
+                "capacity": _to_int(r.get("capacity")),
+                "reserved": _to_int(r.get("reserved")),
+                "tariff": _to_float(r.get("tariff")),
+                "daytariff": _to_int(r.get("daytariff")),
+                "created_at": r.get("created_at"),
+                "lat": _to_float(coords.get("lat")),
+                "lng": _to_float(coords.get("lng")),
+            }
+        )
     return out
 
 
-def insert_parking_lots(conn: sqlite3.Connection, rows, *, debug: bool = False) -> Dict[str, int]:
+def insert_parking_lots(
+    conn: sqlite3.Connection, rows, *, debug: bool = False
+) -> Dict[str, int]:
     ensure_unique_index_parking_lots(conn)
     rows_norm = normalize_parking_rows(rows)
     rows_ok, missing = _require_fields(rows_norm, PARKING_FIELDS, debug=debug)
@@ -381,8 +455,7 @@ def insert_parking_lots(conn: sqlite3.Connection, rows, *, debug: bool = False) 
 
 # ------------------- VEHICLES ----------------------------
 
-VEHICLE_FIELDS = ("license_plate", "make", "model",
-                  "color", "year", "created_at")
+VEHICLE_FIELDS = ("license_plate", "make", "model", "color", "year", "created_at")
 
 SQL_INSERT_VEHICLES_IGNORE = f"""
 INSERT OR IGNORE INTO vehicles ({", ".join(VEHICLE_FIELDS)})
@@ -390,7 +463,12 @@ VALUES ({", ".join("?" for _ in VEHICLE_FIELDS)});
 """
 
 
-def insert_vehicles(conn: sqlite3.Connection, rows: Union[List[Row], Dict[str, Row]], *, debug: bool = False) -> Dict[str, int]:
+def insert_vehicles(
+    conn: sqlite3.Connection,
+    rows: Union[List[Row], Dict[str, Row]],
+    *,
+    debug: bool = False,
+) -> Dict[str, int]:
     """
     Insert vehicles zonder user_id.
     Kenteken is UNIQUE -> OR IGNORE voorkomt duplicates.
@@ -401,16 +479,25 @@ def insert_vehicles(conn: sqlite3.Connection, rows: Union[List[Row], Dict[str, R
 
     rows_ok, missing = _require_fields(lod, VEHICLE_FIELDS, debug=debug)
     data = _normalize_rows(rows_ok, VEHICLE_FIELDS)
-    result = _batch_insert_per_row(
-        conn, SQL_INSERT_VEHICLES_IGNORE, data, debug=debug)
+    result = _batch_insert_per_row(conn, SQL_INSERT_VEHICLES_IGNORE, data, debug=debug)
     result["failed"] += missing
     return result
 
 
 # ------------------- PAYMENTS (FK-safe & initiator-prefer) ----------------
 PAY_FIELDS: Tuple[str, ...] = (
-    "transaction_id", "amount", "user_id", "session_id", "parking_lot_id",
-    "created_at", "completed", "hash", "t_date", "t_method", "t_issuer", "t_bank"
+    "transaction_id",
+    "amount",
+    "user_id",
+    "session_id",
+    "parking_lot_id",
+    "created_at",
+    "completed",
+    "hash",
+    "t_date",
+    "t_method",
+    "t_issuer",
+    "t_bank",
 )
 
 SQL_INSERT_PAYMENTS_IGNORE = f"""
@@ -476,7 +563,9 @@ def load_alias_map_from_csv(path: str) -> Dict[str, str]:
     return mapping
 
 
-def _map_usernames_to_user_ids(conn: sqlite3.Connection, usernames: Set[str]) -> Dict[str, int]:
+def _map_usernames_to_user_ids(
+    conn: sqlite3.Connection, usernames: Set[str]
+) -> Dict[str, int]:
     if not usernames:
         return {}
     # let op: IN (...) parameters
@@ -497,25 +586,32 @@ def ensure_unique_index_payments(conn: sqlite3.Connection) -> None:
     """
     cur = conn.cursor()
     try:
-        cur.execute("""
+        cur.execute(
+            """
             CREATE UNIQUE INDEX IF NOT EXISTS ux_payments_tx
             ON payments (transaction_id);
-        """)
+        """
+        )
         conn.commit()
     except sqlite3.IntegrityError:
         # bestaande duplicaten opruimen en opnieuw proberen
-        cur.execute("""
+        cur.execute(
+            """
             DELETE FROM payments
             WHERE rowid NOT IN (
                 SELECT MIN(rowid) FROM payments GROUP BY transaction_id
             );
-        """)
+        """
+        )
         conn.commit()
-        cur.execute("""
+        cur.execute(
+            """
             CREATE UNIQUE INDEX IF NOT EXISTS ux_payments_tx
             ON payments (transaction_id);
-        """)
+        """
+        )
         conn.commit()
+
 
 # -- Kern: normaliseren + batch insert ---------------------------------------
 
@@ -545,8 +641,7 @@ def normalize_payment_rows_simple(
         # 2) user_id
         user_id = _to_int(_first(r.get("user_id")))
         if user_id is None:
-            uname = _first(r.get("username"), r.get(
-                "user"), r.get("user_name"))
+            uname = _first(r.get("username"), r.get("user"), r.get("user_name"))
             if isinstance(uname, str) and uname.strip():
                 user_id = username_to_id.get(uname.strip().lower())
 
@@ -558,23 +653,28 @@ def normalize_payment_rows_simple(
         t_data = r.get("t_data") or {}
         norm = {
             "transaction_id": tx,
-            "amount":         _to_float(amount),
-            "user_id":        user_id,
-            "session_id":     session_id,
+            "amount": _to_float(amount),
+            "user_id": user_id,
+            "session_id": session_id,
             "parking_lot_id": parking_lot_id,
             # string laten zoals is
-            "created_at":     _first(r.get("created_at")),
-            "completed":      _normalize_completed(r.get("completed")),
-            "hash":           r.get("hash"),
-            "t_date":         _first(t_data.get("date")),   # idem
-            "t_method":       t_data.get("method"),
-            "t_issuer":       t_data.get("issuer"),
-            "t_bank":         t_data.get("bank"),
+            "created_at": _first(r.get("created_at")),
+            "completed": _normalize_completed(r.get("completed")),
+            "hash": r.get("hash"),
+            "t_date": _first(t_data.get("date")),  # idem
+            "t_method": t_data.get("method"),
+            "t_issuer": t_data.get("issuer"),
+            "t_bank": t_data.get("bank"),
         }
 
         # 5) minimale verplichting
-        required = ("transaction_id", "amount", "user_id",
-                    "session_id", "parking_lot_id")
+        required = (
+            "transaction_id",
+            "amount",
+            "user_id",
+            "session_id",
+            "parking_lot_id",
+        )
         if any(norm[k] in (None, "") for k in required):
             missing += 1
             continue
@@ -609,7 +709,7 @@ def insert_payments(
     conn: sqlite3.Connection,
     rows: Union[List[Row], Dict[str, Row]],
     *,
-    debug: bool = False
+    debug: bool = False,
 ) -> Dict[str, int]:
     """
     Minimalistische importer in dezelfde stijl als insert_users:
@@ -626,21 +726,22 @@ def insert_payments(
     # ---- 1) verzamel alle relevante usernames (case-insensitive)
     usernames: Set[str] = set()
     for r in lod:
-        uname = _first(r.get("initiator"), r.get("username"),
-                       r.get("user"), r.get("user_name"))
+        uname = _first(
+            r.get("initiator"), r.get("username"), r.get("user"), r.get("user_name")
+        )
         if isinstance(uname, str) and uname.strip():
             usernames.add(uname.strip().lower())
 
     # 1a) directe DB-lookup (let op: helper geeft keys al lowercase terug)
-    direct_map = _map_usernames_to_user_ids(
-        conn, usernames)  # { lower(username): id }
+    direct_map = _map_usernames_to_user_ids(conn, usernames)  # { lower(username): id }
 
     # 1b) alias → canonical (beide lowercase) → DB-lookup
     try:
         alias_map: Dict[str, str] = read_user_alias_csv()
     except Exception:
         print(
-            "[insert_sessions] failed to read username alias CSV, proceeding without aliases")
+            "[insert_sessions] failed to read username alias CSV, proceeding without aliases"
+        )
         alias_map = {}
     canonical_needed: Set[str] = set()
     for u_lc in usernames:
@@ -652,7 +753,8 @@ def insert_payments(
     canonical_map = {}
     if canonical_needed:
         canonical_map = _map_usernames_to_user_ids(
-            conn, canonical_needed)  # { lower(canonical): id }
+            conn, canonical_needed
+        )  # { lower(canonical): id }
 
     # ---- 2) pre-normalisatie per rij
     for r in lod:
@@ -666,8 +768,9 @@ def insert_payments(
 
         # (c) user_id bepalen: initiator > username > user > user_name
         if r.get("user_id") in (None, ""):
-            uname = _first(r.get("initiator"), r.get("username"),
-                           r.get("user"), r.get("user_name"))
+            uname = _first(
+                r.get("initiator"), r.get("username"), r.get("user"), r.get("user_name")
+            )
             uid = None
             if isinstance(uname, str) and uname.strip():
                 key_lc = uname.strip().lower()
@@ -700,14 +803,18 @@ def insert_payments(
             r["t_bank"] = t_data.get("bank")
 
     # ---- 3) vereiste velden afdwingen
-    PAY_REQUIRED = ("transaction_id", "amount", "user_id",
-                    "session_id", "parking_lot_id")
+    PAY_REQUIRED = (
+        "transaction_id",
+        "amount",
+        "user_id",
+        "session_id",
+        "parking_lot_id",
+    )
     rows_ok, missing = _require_fields(lod, PAY_REQUIRED, debug=debug)
 
     # ---- 4) volgorde normaliseren en batch-insert
     data = _normalize_rows(rows_ok, PAY_FIELDS)
-    result = _batch_insert_per_row(
-        conn, SQL_INSERT_PAYMENTS_IGNORE, data, debug=debug)
+    result = _batch_insert_per_row(conn, SQL_INSERT_PAYMENTS_IGNORE, data, debug=debug)
     result["failed"] += missing
 
     # consistentie met andere rapportages
@@ -719,23 +826,35 @@ def insert_payments(
         for r in lod:
             if r in rows_ok:
                 continue  # deze gingen al door
-            uname = _first(r.get("initiator"), r.get("username"),
-                           r.get("user"), r.get("user_name"))
+            uname = _first(
+                r.get("initiator"), r.get("username"), r.get("user"), r.get("user_name")
+            )
             if isinstance(uname, str) and uname.strip():
                 key_lc = uname.strip().lower()
-                if (key_lc not in direct_map) and (alias_map.get(key_lc, "").strip().lower() not in canonical_map):
+                if (key_lc not in direct_map) and (
+                    alias_map.get(key_lc, "").strip().lower() not in canonical_map
+                ):
                     unresolved.append(uname)
         if unresolved:
             print(
-                f"[PAY][DEBUG] unresolved usernames (sample up to 10): {unresolved[:10]}")
+                f"[PAY][DEBUG] unresolved usernames (sample up to 10): {unresolved[:10]}"
+            )
 
     return result
 
 
 # ------------------- RESERVATIONS (with email remap) ----------------------
 # NB: 'id' is deel van RES_FIELDS en wordt gevuld uit de JSON
-RES_FIELDS = ("id", "user_id", "parking_lot_id", "vehicle_id",
-              "start_time", "duration", "status", "created_at")
+RES_FIELDS = (
+    "id",
+    "user_id",
+    "parking_lot_id",
+    "vehicle_id",
+    "start_time",
+    "duration",
+    "status",
+    "created_at",
+)
 
 SQL_INSERT_RES = f"""
 INSERT OR IGNORE INTO reservations ({", ".join(RES_FIELDS)})
@@ -748,10 +867,8 @@ def _pick_duration(r: Row) -> Union[int, None]:
         d = _to_int(r.get(key))
         if d is not None:
             return d
-    start_keys = ("start_time", "startTime", "start",
-                  "start_datetime", "startDateTime")
-    end_keys = ("end_time",   "endTime",   "end",
-                "end_datetime",   "endDateTime")
+    start_keys = ("start_time", "startTime", "start", "start_datetime", "startDateTime")
+    end_keys = ("end_time", "endTime", "end", "end_datetime", "endDateTime")
     start = next((r.get(k) for k in start_keys if r.get(k)), None)
     end = next((r.get(k) for k in end_keys if r.get(k)), None)
     if start and end:
@@ -766,19 +883,22 @@ def normalize_reservation_rows(raw_rows, *, debug: bool = False) -> List[Row]:
     for r in lod:
         dur = _pick_duration(r)
         norm = {
-            "id":            _to_int(r.get("id")),
-            "user_id":        _to_int(r.get("user_id")),
+            "id": _to_int(r.get("id")),
+            "user_id": _to_int(r.get("user_id")),
             "parking_lot_id": _to_int(r.get("parking_lot_id")),
-            "vehicle_id":     _to_int(r.get("vehicle_id")),
-            "start_time":     r.get("start_time") or r.get("startTime") or r.get("start") or r.get("start_datetime") or r.get("startDateTime"),
-            "duration":       _to_int(dur),
-            "status":         r.get("status"),
-            "created_at":     r.get("created_at") or r.get("createdAt"),
+            "vehicle_id": _to_int(r.get("vehicle_id")),
+            "start_time": r.get("start_time")
+            or r.get("startTime")
+            or r.get("start")
+            or r.get("start_datetime")
+            or r.get("startDateTime"),
+            "duration": _to_int(dur),
+            "status": r.get("status"),
+            "created_at": r.get("created_at") or r.get("createdAt"),
         }
         if debug and (norm["duration"] is None) and shown < 10:
             present = [k for k in r.keys() if r.get(k) is not None]
-            print(
-                f"[RESERVE] no duration for id={r.get('id')} present_keys={present}")
+            print(f"[RESERVE] no duration for id={r.get('id')} present_keys={present}")
             shown += 1
         out.append(norm)
     return out
@@ -789,7 +909,7 @@ def remap_reservation_user_ids_by_email(
     reservations_rows: List[Row],
     users_source: Union[List[Row], Dict[str, Row]],
     *,
-    debug: bool = False
+    debug: bool = False,
 ) -> Tuple[List[Row], int]:
     id_to_email = extract_userid_to_email(users_source)
     emails: Set[str] = set()
@@ -831,7 +951,7 @@ def insert_reservations(
     rows,
     *,
     users_source: Union[List[Row], Dict[str, Row], None] = None,
-    debug: bool = False
+    debug: bool = False,
 ) -> Dict[str, int]:
     rows_norm = normalize_reservation_rows(rows, debug=debug)
 
@@ -844,7 +964,7 @@ def insert_reservations(
     rows_ok, missing = _require_fields(rows_norm, RES_FIELDS, debug=debug)
     data = _normalize_rows(rows_ok, RES_FIELDS)
     result = _batch_insert_per_row(conn, SQL_INSERT_RES, data, debug=debug)
-    result["failed"] += (missing + unresolved)
+    result["failed"] += missing + unresolved
     return result
 
 
@@ -865,10 +985,12 @@ VALUES ({", ".join("?" for _ in SESSIONS_FIELDS)});
 
 
 def ensure_unique_index_sessions(conn: sqlite3.Connection):
-    conn.execute("""
+    conn.execute(
+        """
         CREATE UNIQUE INDEX IF NOT EXISTS ux_sessions_unique
         ON sessions (user_id, parking_lot_id, started);
-    """)
+    """
+    )
     conn.commit()
 
 
@@ -934,7 +1056,9 @@ def _first(*vals):
     return None
 
 
-def insert_parking_sessions(conn, rows: Union[List[dict], Dict[str, dict]], *, debug: bool = False) -> Dict[str, int]:
+def insert_parking_sessions(
+    conn, rows: Union[List[dict], Dict[str, dict]], *, debug: bool = False
+) -> Dict[str, int]:
     """
     Batch insert parking sessions.
 
@@ -952,7 +1076,8 @@ def insert_parking_sessions(conn, rows: Union[List[dict], Dict[str, dict]], *, d
         alias_map: Dict[str, str] = read_user_alias_csv()
     except Exception:
         print(
-            "[insert_sessions] failed to read username alias CSV, proceeding without aliases")
+            "[insert_sessions] failed to read username alias CSV, proceeding without aliases"
+        )
         alias_map = {}
 
     # -------- Gather session usernames ----------
@@ -966,8 +1091,7 @@ def insert_parking_sessions(conn, rows: Union[List[dict], Dict[str, dict]], *, d
     username_map = _map_usernames_to_user_ids(conn, session_usernames)
 
     # For unresolved ones: check CSV alias
-    unresolved = {u for u in session_usernames if u.lower()
-                  not in username_map}
+    unresolved = {u for u in session_usernames if u.lower() not in username_map}
     canonical_usernames_needed = {
         alias_map.get(u.lower()) for u in unresolved if alias_map.get(u.lower())
     }
@@ -975,8 +1099,7 @@ def insert_parking_sessions(conn, rows: Union[List[dict], Dict[str, dict]], *, d
 
     canonical_map = {}
     if canonical_usernames_needed:
-        canonical_map = _map_usernames_to_user_ids(
-            conn, canonical_usernames_needed)
+        canonical_map = _map_usernames_to_user_ids(conn, canonical_usernames_needed)
 
     # -------- Prepare rows ----------
     prepared: List[dict] = []
@@ -996,30 +1119,38 @@ def insert_parking_sessions(conn, rows: Union[List[dict], Dict[str, dict]], *, d
 
         # Parse datetime
         started_raw = _first(
-            r.get("started"), r.get("start"), r.get(
-                "start_time"), r.get("startDateTime")
+            r.get("started"),
+            r.get("start"),
+            r.get("start_time"),
+            r.get("startDateTime"),
         )
         started_dt = _lenient_parse_dt(started_raw)
         started_iso = _iso_utc(started_dt) if started_dt else None
 
         # Duration
-        dur_raw = _first(r.get("duration_minutes"),
-                         r.get("duration"), r.get("minutes"))
+        dur_raw = _first(r.get("duration_minutes"), r.get("duration"), r.get("minutes"))
         duration_minutes = _to_int(dur_raw)
 
         if duration_minutes is None:
-            stopped_raw = _first(r.get("stopped"), r.get(
-                "stop"), r.get("end"), r.get("end_time"))
+            stopped_raw = _first(
+                r.get("stopped"), r.get("stop"), r.get("end"), r.get("end_time")
+            )
             stopped_dt = _lenient_parse_dt(stopped_raw)
             if started_dt and stopped_dt:
                 duration_minutes = max(
-                    0, int((stopped_dt - started_dt).total_seconds() / 60.0))
+                    0, int((stopped_dt - started_dt).total_seconds() / 60.0)
+                )
 
-        payment_status = _first(r.get("payment_status"), r.get(
-            "paymentStatus"), r.get("status"))
+        payment_status = _first(
+            r.get("payment_status"), r.get("paymentStatus"), r.get("status")
+        )
         parking_lot_id = _to_int(
-            _first(r.get("parking_lot_id"), r.get("lot_id"),
-                   r.get("parkingLotId"), r.get("parking_lot"))
+            _first(
+                r.get("parking_lot_id"),
+                r.get("lot_id"),
+                r.get("parkingLotId"),
+                r.get("parking_lot"),
+            )
         )
 
         # Validation
@@ -1027,21 +1158,23 @@ def insert_parking_sessions(conn, rows: Union[List[dict], Dict[str, dict]], *, d
             failed_missing += 1
             if debug and failed_missing <= 10:
                 print(f"[insert_sessions] missing fields for row: {r}")
-                print(uid, parking_lot_id, started_iso,
-                      duration_minutes, payment_status)
+                print(
+                    uid, parking_lot_id, started_iso, duration_minutes, payment_status
+                )
             continue
 
-        prepared.append({
-            "parking_lot_id": parking_lot_id,
-            "user_id": uid,                    # ✅ user_id determined by DB/CSV
-            "started": started_iso,            # ✅ session_id autoincrement happens automatically
-            "duration_minutes": int(duration_minutes),
-            "payment_status": str(payment_status),
-        })
+        prepared.append(
+            {
+                "parking_lot_id": parking_lot_id,
+                "user_id": uid,  # ✅ user_id determined by DB/CSV
+                "started": started_iso,  # ✅ session_id autoincrement happens automatically
+                "duration_minutes": int(duration_minutes),
+                "payment_status": str(payment_status),
+            }
+        )
 
     data = _normalize_rows(prepared, SESSIONS_FIELDS)
-    result = _batch_insert_per_row(
-        conn, SQL_INSERT_SESSIONS_IGNORE, data, debug=debug)
+    result = _batch_insert_per_row(conn, SQL_INSERT_SESSIONS_IGNORE, data, debug=debug)
     result["failed"] += failed_missing
     return result
 
@@ -1061,26 +1194,29 @@ def load_parking_sessions(debug=False):
 
     if debug:
         print(
-            f"Loaded total {len(all_sessions)} sessions in {(datetime.datetime.now() - start_time).total_seconds():.2f} seconds.")
+            f"Loaded total {len(all_sessions)} sessions in {(datetime.datetime.now() - start_time).total_seconds():.2f} seconds."
+        )
     return all_sessions
 
 
 def make_batches(all_info, batch_size: int = 400000, debug: bool = False):
     all_sessions = load_parking_sessions(debug)
     for start in range(0, len(all_sessions), batch_size):
-        yield all_sessions[start:start + batch_size]
+        yield all_sessions[start : start + batch_size]
 
 
 # ------------------- Wipe table ----------------------------
 
 
-def wipe_table(conn: sqlite3.Connection, table_name: str, *, reset_autoincrement: bool = True):
+def wipe_table(
+    conn: sqlite3.Connection, table_name: str, *, reset_autoincrement: bool = True
+):
     """
     Verwijdert alle records uit een tabel.
     Als reset_autoincrement=True wordt ook de AUTOINCREMENT teller gereset.
     """
     cur = conn.cursor()
-    if not re.match(r'^[A-Za-z0-9_]+$', table_name):
+    if not re.match(r"^[A-Za-z0-9_]+$", table_name):
         raise ValueError(f"Ongeldige tabelnaam: {table_name}")
 
     cur.execute(f"DELETE FROM {table_name};")
@@ -1091,9 +1227,9 @@ def wipe_table(conn: sqlite3.Connection, table_name: str, *, reset_autoincrement
 
 
 def fill_database():
-    if not os.path.exists('v1\Database\MobyPark.db'):
+    if not os.path.exists("v1\Database\MobyPark.db"):
         print(f"Database 'v1\Database\MobyPark.db' bestaat niet.")
-        create_database('v1\Database\MobyPark.db')
+        create_database("v1\Database\MobyPark.db")
 
     conn = get_connection()
 
@@ -1107,22 +1243,24 @@ def fill_database():
     print("vehicles:", insert_vehicles(conn, vehicles, debug=True))
 
     reservations = load_data("v1/data/reservations.json")
-    print("reservations:", insert_reservations(
-        conn, reservations, users_source=users, debug=True))
+    print(
+        "reservations:",
+        insert_reservations(conn, reservations, users_source=users, debug=True),
+    )
 
     all_sessions = load_parking_sessions(True)
     batches = make_batches(all_sessions, 400000, debug=True)
     for batch in batches:
         result = insert_parking_sessions(conn, batch, debug=True)
-        print(
-            f"In batch: inserted={result['inserted']}, failed={result['failed']}")
+        print(f"In batch: inserted={result['inserted']}, failed={result['failed']}")
 
     payments = load_data("v1/data/payments.json")
     batches = make_batches(payments, 400000, debug=True)
     for batch in batches:
         result = insert_payments(conn, batch, debug=True)
         print(
-            f"In batch: inserted={result['inserted']}, failed={result['failed']}, duplicates={result.get('duplicates', 0)}")
+            f"In batch: inserted={result['inserted']}, failed={result['failed']}, duplicates={result.get('duplicates', 0)}"
+        )
     print("payments:", insert_payments(conn, payments, debug=True))
     delete_user_alias_csv()
 

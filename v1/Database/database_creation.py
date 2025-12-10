@@ -11,7 +11,8 @@ def create_database(db_path="v1/Database/MobyPark.db"):
         cur = conn.cursor()
 
         # Users
-        cur.execute("""
+        cur.execute(
+            """
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL,
@@ -24,10 +25,12 @@ def create_database(db_path="v1/Database/MobyPark.db"):
             birth_year INTEGER NOT NULL,
             active INTEGER NOT NULL
         );
-        """)
+        """
+        )
 
         # Parking lots
-        cur.execute("""
+        cur.execute(
+            """
         CREATE TABLE IF NOT EXISTS parking_lots (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
@@ -41,10 +44,12 @@ def create_database(db_path="v1/Database/MobyPark.db"):
             lat REAL NOT NULL,
             lng REAL NOT NULL
         );
-        """)
+        """
+        )
 
         # Vehicles
-        cur.execute("""
+        cur.execute(
+            """
         CREATE TABLE IF NOT EXISTS vehicles (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             license_plate TEXT NOT NULL UNIQUE,
@@ -54,10 +59,12 @@ def create_database(db_path="v1/Database/MobyPark.db"):
             year INTEGER NOT NULL,
             created_at TEXT NOT NULL
         );
-        """)
+        """
+        )
 
         # Sessions
-        cur.execute("""
+        cur.execute(
+            """
         CREATE TABLE IF NOT EXISTS sessions (
             session_id INTEGER PRIMARY KEY AUTOINCREMENT,
             parking_lot_id INTEGER NOT NULL,
@@ -68,10 +75,12 @@ def create_database(db_path="v1/Database/MobyPark.db"):
             FOREIGN KEY (parking_lot_id) REFERENCES parking_lots(id) ON DELETE CASCADE,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
-        """)
+        """
+        )
 
         # Reservations
-        cur.execute("""
+        cur.execute(
+            """
         CREATE TABLE IF NOT EXISTS reservations (
             id INTEGER PRIMARY KEY AUTOINCREMENT UNIQUE,
             user_id INTEGER NOT NULL,
@@ -85,10 +94,12 @@ def create_database(db_path="v1/Database/MobyPark.db"):
             FOREIGN KEY (parking_lot_id) REFERENCES parking_lots(id) ON DELETE CASCADE,
             FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE
         );
-        """)
+        """
+        )
 
         # Payments
-        cur.execute("""
+        cur.execute(
+            """
         CREATE TABLE IF NOT EXISTS payments (
             payment_id INTEGER PRIMARY KEY AUTOINCREMENT,
             transaction_id TEXT NOT NULL,          -- aangepast
@@ -107,18 +118,37 @@ def create_database(db_path="v1/Database/MobyPark.db"):
             FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE,
             FOREIGN KEY (parking_lot_id) REFERENCES parking_lots(id) ON DELETE CASCADE
         );
-        """)
+        """
+        )
 
-        cur.execute("""
+        cur.execute(
+            """
+        CREATE TABLE IF NOT EXISTS companies(
+            company_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            address TEXT,
+            email TEXT,
+            phone TEXT,
+            vat_number TEXT,       -- for business billing
+            created_at TEXT NOT NULL     
+        );
+        """
+        )
+
+        cur.execute(
+            """
         CREATE TABLE IF NOT EXISTS user_vehicles (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
             vehicle_id INTEGER NOT NULL,
+            company_id INTEGER,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
             FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE,
+            FOREIGN KEY (company_id) REFERENCES companies(company_id) ON DELETE CASCADE,
             UNIQUE (user_id, vehicle_id)
         );
-        """)
+        """
+        )
 
         conn.commit()
         print(f"Database en tabellen aangemaakt in {db_path}")
