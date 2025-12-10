@@ -36,5 +36,4 @@ class TestPayments:
         """Test getting billing information"""
         response = test_client.get("/payments/billing",
             headers={"Authorization": user_token})
-        # Endpoint may or may not exist
         assert response.status_code in [200, 404]

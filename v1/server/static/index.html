@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MobyPark API Tester</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .auth-section {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            border: 2px solid #667eea;
+        }
+
+        .auth-status {
+            display: inline-block;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+
+        .auth-status.logged-out {
+            background: #fee;
+            color: #c33;
+        }
+
+        .auth-status.logged-in {
+            background: #efe;
+            color: #3c3;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+
+        .tab {
+            padding: 12px 25px;
+            background: #e9ecef;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .tab:hover {
+            background: #dee2e6;
+            transform: translateY(-2px);
+        }
+
+        .tab.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 15px;
+            transition: border 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+
+        .response {
+            margin-top: 20px;
+            padding: 20px;
+            border-radius: 10px;
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+        }
+
+        .response h3 {
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .response pre {
+            background: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+            border: 1px solid #ddd;
+        }
+
+        .success {
+            border-left-color: #28a745;
+        }
+
+        .error {
+            border-left-color: #dc3545;
+        }
+
+        .info-box {
+            background: #e7f3ff;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #2196F3;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚗 MobyPark API Tester</h1>
+            <p>Simple interface to test your parking API</p>
+        </div>
+
+        <div class="content">
+            <!-- Auth Status -->
+            <div class="auth-section">
+                <div id="authStatus" class="auth-status logged-out">🔒 Not Logged In</div>
+                <div id="userInfo"></div>
+            </div>
+
+            <!-- Tabs -->
+            <div class="tabs">
+                <button class="tab active" onclick="showTab('auth')">🔐 Auth</button>
+                <button class="tab" onclick="showTab('parking')">🅿️ Parking Lots</button>
+                <button class="tab" onclick="showTab('vehicles')">🚗 Vehicles</button>
+                <button class="tab" onclick="showTab('reservations')">📅 Reservations</button>
+                <button class="tab" onclick="showTab('payments')">💳 Payments</button>
+            </div>
+
+            <!-- Auth Tab -->
+            <div id="auth" class="tab-content active">
+                <h2>Authentication</h2>
+                <div class="info-box">
+                    <strong>ℹ️ Info:</strong> Register a new account or login with existing credentials. You need to be logged in to use other features.
+                </div>
+
+                <h3>Register New User</h3>
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" id="reg_username" placeholder="testuser">
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="reg_password" placeholder="password123">
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="reg_email" placeholder="test@example.com">
+                </div>
+                <div class="form-group">
+                    <label>Name</label>
+                    <input type="text" id="reg_name" placeholder="Test User">
+                </div>
+                <div class="form-group">
+                    <label>Phone</label>
+                    <input type="text" id="reg_phone" placeholder="1234567890">
+                </div>
+                <div class="form-group">
+                    <label>Birth Year</label>
+                    <input type="number" id="reg_birth_year" placeholder="1990">
+                </div>
+                <button class="btn btn-primary" onclick="register()">Register</button>
+
+                <hr style="margin: 30px 0; border: none; border-top: 2px solid #eee;">
+
+                <h3>Login</h3>
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" id="login_username" placeholder="testuser">
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="login_password" placeholder="password123">
+                </div>
+                <button class="btn btn-primary" onclick="login()">Login</button>
+
+                <div id="authResponse"></div>
+            </div>
+
+            <!-- Parking Lots Tab -->
+            <div id="parking" class="tab-content">
+                <h2>Parking Lots</h2>
+                <div class="info-box">
+                    <strong>ℹ️ Info:</strong> View all parking lots or get details of a specific one.
+                </div>
+
+                <div class="button-group">
+                    <button class="btn btn-primary" onclick="getParkingLots()">Get All Parking Lots</button>
+                </div>
+
+                <hr style="margin: 30px 0; border: none; border-top: 2px solid #eee;">
+
+                <h3>Get Specific Parking Lot</h3>
+                <div class="form-group">
+                    <label>Parking Lot ID</label>
+                    <input type="number" id="parking_id" placeholder="1">
+                </div>
+                <button class="btn btn-primary" onclick="getParkingLot()">Get Parking Lot</button>
+
+                <div id="parkingResponse"></div>
+            </div>
+
+            <!-- Vehicles Tab -->
+            <div id="vehicles" class="tab-content">
+                <h2>Vehicles</h2>
+                <div class="info-box">
+                    <strong>ℹ️ Info:</strong> Manage your vehicles. You must be logged in.
+                </div>
+
+                <div class="button-group">
+                    <button class="btn btn-primary" onclick="getVehicles()">Get My Vehicles</button>
+                </div>
+
+                <hr style="margin: 30px 0; border: none; border-top: 2px solid #eee;">
+
+                <h3>Add New Vehicle</h3>
+                <div class="form-group">
+                    <label>License Plate</label>
+                    <input type="text" id="vehicle_plate" placeholder="ABC-123">
+                </div>
+                <div class="form-group">
+                    <label>Make</label>
+                    <input type="text" id="vehicle_make" placeholder="Toyota">
+                </div>
+                <div class="form-group">
+                    <label>Model</label>
+                    <input type="text" id="vehicle_model" placeholder="Camry">
+                </div>
+                <div class="form-group">
+                    <label>Color</label>
+                    <input type="text" id="vehicle_color" placeholder="Blue">
+                </div>
+                <div class="form-group">
+                    <label>Year</label>
+                    <input type="number" id="vehicle_year" placeholder="2020">
+                </div>
+                <button class="btn btn-primary" onclick="addVehicle()">Add Vehicle</button>
+
+                <div id="vehiclesResponse"></div>
+            </div>
+
+            <!-- Reservations Tab -->
+            <div id="reservations" class="tab-content">
+                <h2>Reservations</h2>
+                <div class="info-box">
+                    <strong>ℹ️ Info:</strong> View and manage your parking reservations.
+                </div>
+
+                <div class="button-group">
+                    <button class="btn btn-primary" onclick="getReservations()">Get My Reservations</button>
+                </div>
+
+                <div id="reservationsResponse"></div>
+            </div>
+
+            <!-- Payments Tab -->
+            <div id="payments" class="tab-content">
+                <h2>Payments</h2>
+                <div class="info-box">
+                    <strong>ℹ️ Info:</strong> View your payment history.
+                </div>
+
+                <div class="button-group">
+                    <button class="btn btn-primary" onclick="getPayments()">Get My Payments</button>
+                </div>
+
+                <div id="paymentsResponse"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+        let token = localStorage.getItem('token');
+        let currentUser = localStorage.getItem('username');
+
+        // Update auth status on load
+        updateAuthStatus();
+
+        function updateAuthStatus() {
+            const statusEl = document.getElementById('authStatus');
+            const userInfoEl = document.getElementById('userInfo');
+
+            if (token) {
+                statusEl.className = 'auth-status logged-in';
+                statusEl.textContent = '✅ Logged In';
+                userInfoEl.innerHTML = `<p style="margin-top: 10px;"><strong>User:</strong> ${currentUser} | <button class="btn btn-secondary" onclick="logout()" style="padding: 5px 15px; font-size: 14px;">Logout</button></p>`;
+            } else {
+                statusEl.className = 'auth-status logged-out';
+                statusEl.textContent = '🔒 Not Logged In';
+                userInfoEl.innerHTML = '';
+            }
+        }
+
+        function showTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(el => {
+                el.classList.remove('active');
+            });
+            document.querySelectorAll('.tab').forEach(el => {
+                el.classList.remove('active');
+            });
+
+            // Show selected tab
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        function showResponse(elementId, data, isError = false) {
+            const el = document.getElementById(elementId);
+            const className = isError ? 'response error' : 'response success';
+            el.innerHTML = `
+                <div class="${className}">
+                    <h3>${isError ? '❌ Error' : '✅ Success'}</h3>
+                    <pre>${JSON.stringify(data, null, 2)}</pre>
+                </div>
+            `;
+        }
+
+        async function register() {
+            const data = {
+                username: document.getElementById('reg_username').value,
+                password: document.getElementById('reg_password').value,
+                email: document.getElementById('reg_email').value,
+                name: document.getElementById('reg_name').value,
+                phone: document.getElementById('reg_phone').value,
+                birth_year: parseInt(document.getElementById('reg_birth_year').value)
+            };
+
+            try {
+                const response = await fetch(`${API_BASE}/auth/register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    showResponse('authResponse', result);
+                } else {
+                    showResponse('authResponse', result, true);
+                }
+            } catch (error) {
+                showResponse('authResponse', { error: error.message }, true);
+            }
+        }
+
+        async function login() {
+            const username = document.getElementById('login_username').value;
+            const password = document.getElementById('login_password').value;
+
+            try {
+                const response = await fetch(`${API_BASE}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.session_token) {
+                    token = result.session_token;
+                    currentUser = username;
+                    localStorage.setItem('token', token);
+                    localStorage.setItem('username', username);
+                    updateAuthStatus();
+                    showResponse('authResponse', { message: 'Login successful!', ...result });
+                } else {
+                    showResponse('authResponse', result, true);
+                }
+            } catch (error) {
+                showResponse('authResponse', { error: error.message }, true);
+            }
+        }
+
+        function logout() {
+            token = null;
+            currentUser = null;
+            localStorage.removeItem('token');
+            localStorage.removeItem('username');
+            updateAuthStatus();
+        }
+
+        async function getParkingLots() {
+            try {
+                const response = await fetch(`${API_BASE}/parking-lots`, {
+                    headers: token ? { 'authorization': token } : {}
+                });
+
+                const result = await response.json();
+                showResponse('parkingResponse', result, !response.ok);
+            } catch (error) {
+                showResponse('parkingResponse', { error: error.message }, true);
+            }
+        }
+
+        async function getParkingLot() {
+            const id = document.getElementById('parking_id').value;
+
+            try {
+                const response = await fetch(`${API_BASE}/parking-lots/${id}`, {
+                    headers: token ? { 'authorization': token } : {}
+                });
+
+                const result = await response.json();
+                showResponse('parkingResponse', result, !response.ok);
+            } catch (error) {
+                showResponse('parkingResponse', { error: error.message }, true);
+            }
+        }
+
+        async function getVehicles() {
+            if (!token) {
+                showResponse('vehiclesResponse', { error: 'Please login first' }, true);
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/vehicles`, {
+                    headers: { 'authorization': token }
+                });
+
+                const result = await response.json();
+                showResponse('vehiclesResponse', result, !response.ok);
+            } catch (error) {
+                showResponse('vehiclesResponse', { error: error.message }, true);
+            }
+        }
+
+        async function addVehicle() {
+            if (!token) {
+                showResponse('vehiclesResponse', { error: 'Please login first' }, true);
+                return;
+            }
+
+            const data = {
+                license_plate: document.getElementById('vehicle_plate').value,
+                make: document.getElementById('vehicle_make').value,
+                model: document.getElementById('vehicle_model').value,
+                color: document.getElementById('vehicle_color').value,
+                year: parseInt(document.getElementById('vehicle_year').value)
+            };
+
+            try {
+                const response = await fetch(`${API_BASE}/vehicles`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'authorization': token
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+                showResponse('vehiclesResponse', result, !response.ok);
+            } catch (error) {
+                showResponse('vehiclesResponse', { error: error.message }, true);
+            }
+        }
+
+        async function getReservations() {
+            if (!token) {
+                showResponse('reservationsResponse', { error: 'Please login first' }, true);
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/reservations`, {
+                    headers: { 'authorization': token }
+                });
+
+                const result = await response.json();
+                showResponse('reservationsResponse', result, !response.ok);
+            } catch (error) {
+                showResponse('reservationsResponse', { error: error.message }, true);
+            }
+        }
+
+        async function getPayments() {
+            if (!token) {
+                showResponse('paymentsResponse', { error: 'Please login first' }, true);
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/payments`, {
+                    headers: { 'authorization': token }
+                });
+
+                const result = await response.json();
+                showResponse('paymentsResponse', result, !response.ok);
+            } catch (error) {
+                showResponse('paymentsResponse', { error: error.message }, true);
+            }
+        }
+    </script>
+</body>
+</html>

@@ -23,9 +23,38 @@ def is_valid_email(email: str) -> bool:
     return re.fullmatch(r"[^@]+@[^@]+\.[^@]+", email) is not None
 
 def is_valid_phone(phone: str) -> bool:
+    """
+    Validates phone numbers worldwide.
+    Accepts: digits, spaces, dashes, parentheses, plus sign
+    Length: 7-15 digits (covers most international formats)
+    Examples: +1-555-123-4567, (555) 123-4567, +31612345678, 0612345678
+    """
     if not isinstance(phone, str):
         return False
-    return re.fullmatch(r"\+?[1-9]\d{1,14}", phone) is not None
+    # Remove common separators to count digits
+    digits_only = re.sub(r'[\s\-\(\)\+]', '', phone)
+    # Must have 7-15 digits and only contain valid phone characters
+    if not re.fullmatch(r'[0-9]{7,15}', digits_only):
+        return False
+    # Original string should only contain digits and common separators
+    return re.fullmatch(r'[\d\s\-\(\)\+]+', phone) is not None
+
+def is_valid_license_plate(license_plate: str) -> bool:
+    """
+    Validates license plates worldwide.
+    Accepts: letters, numbers, spaces, dashes
+    Length: 2-15 characters (covers most international formats)
+    Examples: ABC-123, 12-ABC-34, XX 1234 YY, 1ABC234
+    """
+    if not isinstance(license_plate, str):
+        return False
+    # Remove spaces and dashes for length check
+    clean = re.sub(r'[\s\-]', '', license_plate)
+    # Must have 2-15 alphanumeric characters
+    if not (2 <= len(clean) <= 15):
+        return False
+    # Can only contain letters, numbers, spaces, and dashes
+    return re.fullmatch(r'[A-Z0-9\s\-]+', license_plate.upper()) is not None
 
 def is_valid_role(role: str) -> bool:
     if not isinstance(role, str):

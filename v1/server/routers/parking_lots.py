@@ -45,12 +45,12 @@ def create_parking_lot(data: Dict[str, Any] = Body(...), admin = Depends(require
 #Body(...) betekent dat de body verplicht is
 @router.put("/parking-lots/{lid}")
 def update_parking_lot_route(lid: str, data: Dict[str, Any] = Body(...), admin = Depends(require_admin), con: sqlite3.Connection = Depends(get_db)):
-    # Check if parking lot exists
+    #check parking lot na
     parking_lot = get_parking_lot_by_id(con, int(lid))
     if parking_lot is None:
         raise HTTPException(404, detail="Parking lot not found")
 
-    # Build updates dictionary with fallbacks to existing values
+    #gevulde template maken
     updates = {
         "name": data.get("name", parking_lot.name),
         "location": data.get("location", parking_lot.location),
@@ -63,7 +63,7 @@ def update_parking_lot_route(lid: str, data: Dict[str, Any] = Body(...), admin =
         "lng": data.get("lng", parking_lot.lng),
     }
 
-    # Use database function
+    #call database voor update
     success = update_parking_lot(con, int(lid), updates)
     if not success:
         raise HTTPException(500, detail="Failed to update parking lot")
@@ -72,7 +72,7 @@ def update_parking_lot_route(lid: str, data: Dict[str, Any] = Body(...), admin =
 
 @router.delete("/parking-lots/{lid}")
 def delete_parking_lot_route(lid: str, admin = Depends(require_admin), con: sqlite3.Connection = Depends(get_db)):
-    # Use database function
+    #call database delete
     success = delete_parking_lot(con, int(lid))
     if not success:
         raise HTTPException(404, detail="Parking lot not found")
@@ -80,38 +80,37 @@ def delete_parking_lot_route(lid: str, admin = Depends(require_admin), con: sqli
 
 @router.get("/parking-lots")
 def list_parking_lots(con: sqlite3.Connection = Depends(get_db)):
-    # Use database function
+    #call database get
     parking_lots = get_all_parking_lots(con)
-    # Convert model objects to dicts
+    #convert to dicts
     return [lot.to_dict() for lot in parking_lots]
 
 @router.get("/parking-lots/{lid}")
 def get_parking_lot_route(lid: str, con: sqlite3.Connection = Depends(get_db)):
-    # Use database function
+    #call database get
     parking_lot = get_parking_lot_by_id(con, int(lid))
     if parking_lot is None:
         raise HTTPException(404, detail="Parking lot not found")
     return parking_lot.to_dict()
 
-# Sessions for parking lots
+#Sessions 
 @router.post("/parking-lots/{lid}/sessions/start")
 def start_session(lid: str, data: Dict[str, Any] = Body(...), user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
     if "licenseplate" not in data:
         raise HTTPException(400, detail={"error": "Require field missing", "field": "licenseplate"})
 
-    # Get user ID
+    #get user ID
     from Database.database_logic import get_user_id_by_username
     user_id = get_user_id_by_username(con, user["username"])
     if not user_id:
         raise HTTPException(400, detail="User not found")
 
-    # Find or create vehicle with this license plate
+    #find or create vehicle with license 
     license_plate = data["licenseplate"]
     cur = con.execute("SELECT id FROM vehicles WHERE license_plate = ? AND user_id = ?", (license_plate, user_id))
     vehicle_row = cur.fetchone()
 
     if not vehicle_row:
-        # Create vehicle if it doesn't exist
         con.execute(
             "INSERT INTO vehicles (user_id, license_plate, created_at) VALUES (?, ?, ?)",
             (user_id, license_plate, now_str())
@@ -120,13 +119,13 @@ def start_session(lid: str, data: Dict[str, Any] = Body(...), user = Depends(req
     else:
         vehicle_id = vehicle_row["id"]
 
-    # Check for active sessions with this vehicle
+    #check active sessions 
     cur = con.execute("SELECT * FROM sessions WHERE parking_lot_id = ? AND vehicle_id = ? AND stopped IS NULL", (lid, vehicle_id))
     active_session = cur.fetchone()
     if active_session:
         raise HTTPException(400, detail="Cannot start a session when another session for this vehicle is already active.")
 
-    # Insert new session
+    #insert new session
     started = now_str()
     cur = con.execute(
         "INSERT INTO sessions (parking_lot_id, user_id, vehicle_id, started, payment_status) VALUES (?, ?, ?, ?, ?)",
@@ -150,13 +149,13 @@ def stop_session(lid: str, data: Dict[str, Any] = Body(...), user = Depends(requ
     if "licenseplate" not in data:
         raise HTTPException(400, detail={"error": "Require field missing", "field": "licenseplate"})
 
-    # Get user ID
+    #fetch user id
     from Database.database_logic import get_user_id_by_username
     user_id = get_user_id_by_username(con, user["username"])
     if not user_id:
         raise HTTPException(400, detail="User not found")
 
-    # Find vehicle
+    #look for vehicle
     license_plate = data["licenseplate"]
     cur = con.execute("SELECT id FROM vehicles WHERE license_plate = ? AND user_id = ?", (license_plate, user_id))
     vehicle_row = cur.fetchone()
@@ -164,7 +163,7 @@ def stop_session(lid: str, data: Dict[str, Any] = Body(...), user = Depends(requ
         raise HTTPException(404, detail="Vehicle not found")
     vehicle_id = vehicle_row["id"]
 
-    # Find active session
+    #find session
     cur = con.execute(
         "SELECT * FROM sessions WHERE parking_lot_id = ? AND vehicle_id = ? AND stopped IS NULL",
         (lid, vehicle_id)
@@ -173,7 +172,7 @@ def stop_session(lid: str, data: Dict[str, Any] = Body(...), user = Depends(requ
     if not active_session:
         raise HTTPException(400, detail="Cannot stop a session when there is no active session for this vehicle.")
 
-    # Stop the session
+    #stop session
     stopped = now_str()
     session_id = active_session["session_id"]
     con.execute("UPDATE sessions SET stopped = ? WHERE session_id = ?", (stopped, session_id))
@@ -183,7 +182,7 @@ def stop_session(lid: str, data: Dict[str, Any] = Body(...), user = Depends(requ
 
 @router.get("/parking-lots/{lid}/sessions")
 def list_sessions(lid: str, user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
-    # Get user ID
+    #fetch user id
     from Database.database_logic import get_user_id_by_username
     user_id = get_user_id_by_username(con, user["username"])
 
@@ -193,13 +192,13 @@ def list_sessions(lid: str, user = Depends(require_session), con: sqlite3.Connec
     if user["role"] == "ADMIN":
         return [dict(s) for s in sessions]
 
-    # Filter to user's sessions
+    #filter user sessions by user id
     user_sessions = [dict(s) for s in sessions if s["user_id"] == user_id]
     return user_sessions
 
 @router.get("/parking-lots/{lid}/sessions/{sid}")
 def get_session_detail(lid: str, sid: str, user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
-    # Get user ID
+    #fetch user id
     from Database.database_logic import get_user_id_by_username
     user_id = get_user_id_by_username(con, user["username"])
 

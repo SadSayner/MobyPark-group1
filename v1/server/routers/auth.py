@@ -9,7 +9,14 @@ from ...storage_utils import load_json, save_user_data
 from ...session_manager import add_session, remove_session, get_session
 from ..deps import require_session
 from ...Database.database_logic import get_db, get_users_by_username, update_user
-from ..validation.validation import is_valid_username, is_valid_password, is_valid_email, is_valid_phone, is_valid_role
+from ..validation.validation import (
+    is_valid_username,
+    is_valid_password,
+    is_valid_email,
+    is_valid_phone,
+    is_valid_role,
+    is_valid_license_plate
+)
 
 
 router = APIRouter()
@@ -31,12 +38,34 @@ class LoginIn(BaseModel):
 
 @router.post("/register")
 def register(payload: RegisterIn, con: sqlite3.Connection = Depends(get_db)):
-    # Check if username already exists
+    if not is_valid_username(payload.username):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid username. Must be 8-10 characters, start with a letter or underscore, and contain only letters, numbers, underscores, apostrophes, or periods."
+        )
+
+    if not is_valid_password(payload.password):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid password. Must be 12-30 characters and contain at least one lowercase letter, one uppercase letter, one digit, and one special character."
+        )
+
+    if not is_valid_email(payload.email):
+        raise HTTPException(status_code=400, detail="Invalid email format.")
+
+    if not is_valid_phone(payload.phone):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid phone number. Must be 7-15 digits with optional separators (+, -, spaces, parentheses)."
+        )
+
+    if payload.role and not is_valid_role(payload.role):
+        raise HTTPException(status_code=400, detail="Invalid role. Must be 'USER' or 'ADMIN'.")
+
     existing_user = get_users_by_username(con, payload.username)
     if existing_user:
         raise HTTPException(status_code=409, detail="Username already taken")
 
-    # Direct insert with all required fields
     con.execute(
         "INSERT INTO users (username, password, name, email, phone, role, created_at, birth_year, active) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 1990, 1)",
         (payload.username, hasher(payload.password), payload.name, payload.email, payload.phone, (payload.role or "USER").upper()),
@@ -46,7 +75,9 @@ def register(payload: RegisterIn, con: sqlite3.Connection = Depends(get_db)):
 
 @router.post("/login")
 def login(payload: LoginIn, con: sqlite3.Connection = Depends(get_db)):
-    # Get user by username
+    if not payload.username or not payload.password:
+        raise HTTPException(status_code=400, detail="Username and password are required")
+
     user = get_users_by_username(con, payload.username)
 
     if user and user.password == hasher(payload.password):
@@ -57,10 +88,6 @@ def login(payload: LoginIn, con: sqlite3.Connection = Depends(get_db)):
 
 @router.get("/profile")
 def profile(user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
-    """
-    Return fresh profile data from the database (no password).
-    Uses the session 'user' to identify which DB record to read.
-    """
     db_user = get_users_by_username(con, user["username"])
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -75,15 +102,32 @@ class UpdateProfileIn(BaseModel):
     
 @router.put("/profile")
 def update_profile(updates: UpdateProfileIn, user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
-    """
-    Update user profile using database function.
-    """
-    # Check if user exists
     db_user = get_users_by_username(con, user["username"])
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Build updates dictionary
+    if updates.password is not None:
+        if not is_valid_password(updates.password):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid password. Must be 12-30 characters and contain at least one lowercase letter, one uppercase letter, one digit, and one special character."
+            )
+
+    if updates.email is not None:
+        if not is_valid_email(updates.email):
+            raise HTTPException(status_code=400, detail="Invalid email format.")
+
+    if updates.phone is not None:
+        if not is_valid_phone(updates.phone):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid phone number. Must be 7-15 digits with optional separators (+, -, spaces, parentheses)."
+            )
+
+    if updates.role is not None:
+        if not is_valid_role(updates.role):
+            raise HTTPException(status_code=400, detail="Invalid role. Must be 'USER' or 'ADMIN'.")
+
     update_dict = {}
     if updates.name is not None:
         update_dict["name"] = updates.name
@@ -96,7 +140,6 @@ def update_profile(updates: UpdateProfileIn, user = Depends(require_session), co
     if updates.phone is not None:
         update_dict["phone"] = updates.phone
 
-    # Use database function to update
     success = update_user(con, user["username"], update_dict)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to update user")

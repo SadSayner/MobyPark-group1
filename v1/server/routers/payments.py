@@ -23,7 +23,7 @@ class PaymentIn(BaseModel):
     recipient: Optional[str] = None
 
     class Config:
-        extra = "allow"  # Allow unknown fields for compatibility
+        extra = "allow"  #voor unknown fields
 
 def _row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
     if row is None:
@@ -44,7 +44,7 @@ def create_payment(payload: PaymentIn, user = Depends(require_session), con: sql
     if not user_id:
         raise HTTPException(400, detail="User not found")
 
-    # optional: link parking session (id) to created payment. Only if the user owns the session or is admin.
+    #link parking session (id) to created payment. Only if the user owns the session or is admin.
     session_id = None
     parking_lot_id = None
     # Check both session_id and parkingsession_id for compatibility
@@ -62,26 +62,24 @@ def create_payment(payload: PaymentIn, user = Depends(require_session), con: sql
         session_id = srow["session_id"]
         parking_lot_id = srow["parking_lot_id"]
 
-    # generate transaction id and validation hash
+    #genereer transaction id en validation hash
     import uuid
     transaction_id = payload.transaction if payload.transaction else str(uuid.uuid4())
     validation_hash = sc.generate_transaction_validation_hash()
     created_at = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
 
     if isinstance(payload.t_data, dict):
-        # use the explicit provider fields when present, fall back to common synonyms
+        #use the explicit provider fields when present
         t_date = payload.t_data.get("t_date") or payload.t_data.get("date") or created_at
         t_method = payload.t_data.get("t_method") or payload.t_data.get("method") or "unknown"
         t_issuer = payload.t_data.get("t_issuer") or payload.t_data.get("issuer") or ""
         t_bank = payload.t_data.get("t_bank") or payload.t_data.get("bank") or ""
     else:
-        # sensible, human-readable defaults
         t_date = created_at
         t_method = "pending"
         t_issuer = ""
         t_bank = ""
 
-    # persist to DB
     con.execute("""
         INSERT INTO payments (
             transaction_id, amount, user_id, session_id, parking_lot_id,
@@ -126,7 +124,7 @@ def refund_payment(payload: PaymentIn, admin = Depends(require_admin), con: sqli
     if amount <= 0:
         raise HTTPException(400, detail={"error": "amount must be greater than zero"})
 
-    # get admin id (prefer id from require_admin if present)
+    #fetch admin id (prefer id from require_admin if present)
     admin_id = admin.get("id")
     if admin_id is None:
         # Use database function to get admin ID

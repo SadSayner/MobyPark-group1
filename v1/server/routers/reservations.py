@@ -94,7 +94,7 @@ def get_reservation(rid: str, user = Depends(require_session), con: sqlite3.Conn
         raise HTTPException(404, detail="Reservation not found")
 
     r = dict(row)
-    # Check ownership
+    #check admin
     if user.get("role") != "ADMIN" and r.get("user_id") != user_id:
         raise HTTPException(403, detail="Access denied")
 

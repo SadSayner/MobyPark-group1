@@ -114,7 +114,6 @@ def _make_in_clause(n: int) -> str:
 
 # ---------------------- DateTime helpers --------------------
 
-
 def calculate_duration(start_iso, end_iso):
     """
     Return duration in whole minutes between two ISO-like datetimes.
@@ -136,7 +135,6 @@ def calculate_duration(start_iso, end_iso):
         return None
 
 # ---------------------- Users helpers (email remap) -----------------------
-
 
 def extract_userid_to_email(users_source: Union[List[Row], Dict[str, Row]]) -> Dict[int, str]:
     """
