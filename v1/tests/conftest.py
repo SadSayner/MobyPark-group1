@@ -38,10 +38,10 @@ def test_client():
 def user_token(test_client):
     """Register and login a test user, return session token"""
     # Try to register (might fail if already exists)
-    test_client.post("/register", json=TEST_USER)
+    test_client.post("/auth/register", json=TEST_USER)
 
     # Login
-    response = test_client.post("/login", json={
+    response = test_client.post("/auth/login", json={
         "username": TEST_USER["username"],
         "password": TEST_USER["password"]
     })
@@ -53,10 +53,10 @@ def user_token(test_client):
 def admin_token(test_client):
     """Register and login an admin user, return session token"""
     # Try to register (might fail if already exists)
-    test_client.post("/register", json=TEST_ADMIN)
+    test_client.post("/auth/register", json=TEST_ADMIN)
 
     # Login
-    response = test_client.post("/login", json={
+    response = test_client.post("/auth/login", json={
         "username": TEST_ADMIN["username"],
         "password": TEST_ADMIN["password"]
     })

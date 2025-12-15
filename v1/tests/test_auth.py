@@ -1,12 +1,12 @@
 import time
 import pytest
 
-
+#source conftest, import test_client, user_token, admin_token, dit zijn dependency injecties
 class TestAuthentication:
     def test_register_new_user(self, test_client):
         """Test user registration"""
         timestamp = int(time.time() * 1000)  # milliseconds for uniqueness
-        response = test_client.post("/register", json={
+        response = test_client.post("/auth/register", json={
             "username": f"newuser_{timestamp}",
             "password": "password123",
             "name": "New User",
@@ -23,7 +23,7 @@ class TestAuthentication:
         username = f"duplicate_{timestamp}"
 
         #Register new user
-        test_client.post("/register", json={
+        test_client.post("/auth/register", json={
             "username": username,
             "password": "pass123",
             "name": "Test",
@@ -32,7 +32,7 @@ class TestAuthentication:
         })
 
         #register again with same username
-        response = test_client.post("/register", json={
+        response = test_client.post("/auth/register", json={
             "username": username,
             "password": "pass123",
             "name": "Test",
