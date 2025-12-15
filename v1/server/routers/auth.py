@@ -24,7 +24,7 @@ router = APIRouter()
 def hasher(s: str) -> str:
     return hashlib.md5(s.encode()).hexdigest()
 
-class RegisterIn(BaseModel):
+class RegisterBody(BaseModel):
     username: str
     password: str
     name: str
@@ -32,12 +32,19 @@ class RegisterIn(BaseModel):
     phone: str
     role: Optional[str] = "USER"
 
-class LoginIn(BaseModel):
+class LoginBody(BaseModel):
     username: str
     password: str
 
+class UpdateProfileIn(BaseModel):
+    name: Optional[str] = None
+    password: Optional[str] = None
+    role: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+
 @router.post("/register")
-def register(payload: RegisterIn, con: sqlite3.Connection = Depends(get_db)):
+def register(payload: RegisterBody, con: sqlite3.Connection = Depends(get_db)):
     if not is_valid_username(payload.username):
         raise HTTPException(
             status_code=400,
@@ -74,7 +81,7 @@ def register(payload: RegisterIn, con: sqlite3.Connection = Depends(get_db)):
     return {"message": "User created"}
 
 @router.post("/login")
-def login(payload: LoginIn, con: sqlite3.Connection = Depends(get_db)):
+def login(payload: LoginBody, con: sqlite3.Connection = Depends(get_db)):
     if not payload.username or not payload.password:
         raise HTTPException(status_code=400, detail="Username and password are required")
 
@@ -92,13 +99,6 @@ def profile(user = Depends(require_session), con: sqlite3.Connection = Depends(g
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
     return {"username": db_user.username, "name": db_user.name, "role": db_user.role}
-
-class UpdateProfileIn(BaseModel):
-    name: Optional[str] = None
-    password: Optional[str] = None
-    role: Optional[str] = None
-    email: Optional[str] = None
-    phone: Optional[str] = None
     
 @router.put("/profile")
 def update_profile(updates: UpdateProfileIn, user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):

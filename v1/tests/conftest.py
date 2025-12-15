@@ -9,9 +9,11 @@ from ..server.app import app
 client = TestClient(app)
 
 # Test data with email fields
+# Username: 8-10 chars, must start with letter or underscore
+# Password must be 12-30 chars with lowercase, uppercase, digit, and special char
 TEST_USER = {
-    "username": "pytest_user",
-    "password": "testpass123",
+    "username": "pyt_user1",  # 9 chars
+    "password": "TestPass123!",
     "name": "Pytest Test User",
     "email": "pytest_user@example.com",
     "phone": "1234567890",
@@ -19,8 +21,8 @@ TEST_USER = {
 }
 
 TEST_ADMIN = {
-    "username": "pytest_admin",
-    "password": "adminpass123",
+    "username": "pyt_adm01",  # 9 chars
+    "password": "AdminPass123!",
     "name": "Pytest Admin User",
     "email": "pytest_admin@example.com",
     "phone": "0987654321",
@@ -34,18 +36,28 @@ def test_client():
     return client
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="function")
 def user_token(test_client):
     """Register and login a test user, return session token"""
     # Try to register (might fail if already exists)
-    test_client.post("/auth/register", json=TEST_USER)
+    reg_response = test_client.post("/auth/register", json=TEST_USER)
+
+    # If registration failed due to existing user, that's OK
+    # We just need to be able to login
+    if reg_response.status_code not in [200, 409]:
+        # Unexpected error
+        raise Exception(f"Registration failed with unexpected code: {reg_response.status_code}, {reg_response.json()}")
 
     # Login
     response = test_client.post("/auth/login", json={
         "username": TEST_USER["username"],
         "password": TEST_USER["password"]
     })
-    assert response.status_code == 200
+
+    # If login fails, the user might exist with different password - show helpful error
+    if response.status_code != 200:
+        raise Exception(f"Login failed: {response.status_code}. User might exist with different password. Clean database with: DELETE FROM users WHERE username='pytest_user'")
+
     return response.json()["session_token"]
 
 
@@ -53,14 +65,21 @@ def user_token(test_client):
 def admin_token(test_client):
     """Register and login an admin user, return session token"""
     # Try to register (might fail if already exists)
-    test_client.post("/auth/register", json=TEST_ADMIN)
+    reg_response = test_client.post("/auth/register", json=TEST_ADMIN)
+
+    # If registration failed due to existing user, that's OK
+    if reg_response.status_code not in [200, 409]:
+        raise Exception(f"Admin registration failed with unexpected code: {reg_response.status_code}, {reg_response.json()}")
 
     # Login
     response = test_client.post("/auth/login", json={
         "username": TEST_ADMIN["username"],
         "password": TEST_ADMIN["password"]
     })
-    assert response.status_code == 200
+
+    if response.status_code != 200:
+        raise Exception(f"Admin login failed: {response.status_code}. User might exist with different password. Clean database with: DELETE FROM users WHERE username='pytest_admin'")
+
     return response.json()["session_token"]
 
 

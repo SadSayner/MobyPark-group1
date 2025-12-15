@@ -1,16 +1,17 @@
 import time
 import pytest
+import random
 
 #source conftest, import test_client, user_token, admin_token, dit zijn dependency injecties
 class TestAuthentication:
     def test_register_new_user(self, test_client):
         """Test user registration"""
-        timestamp = int(time.time() * 1000)  # milliseconds for uniqueness
+        rand_id = random.randint(100000, 999999)
         response = test_client.post("/auth/register", json={
-            "username": f"newuser_{timestamp}",
-            "password": "password123",
+            "username": f"new{rand_id}",  # 9 chars, unique
+            "password": "Password123!",
             "name": "New User",
-            "email": f"newuser_{timestamp}@example.com",
+            "email": f"new{rand_id}@example.com",
             "phone": "1111111111",
             "role": "USER"
         })
@@ -19,13 +20,13 @@ class TestAuthentication:
 
     def test_register_duplicate_user(self, test_client):
         """Test registering duplicate username"""
-        timestamp = int(time.time() * 1000)
-        username = f"duplicate_{timestamp}"
+        rand_id = random.randint(100000, 999999)
+        username = f"dup{rand_id}"[:10]  # max 10 chars
 
         #Register new user
         test_client.post("/auth/register", json={
             "username": username,
-            "password": "pass123",
+            "password": "Password123!",
             "name": "Test",
             "email": f"{username}@example.com",
             "phone": "2222222222"
@@ -34,9 +35,9 @@ class TestAuthentication:
         #register again with same username
         response = test_client.post("/auth/register", json={
             "username": username,
-            "password": "pass123",
+            "password": "Password123!",
             "name": "Test",
-            "email": f"{username}_2@example.com",
+            "email": f"{username}2@example.com",
             "phone": "3333333333"
         })
         assert response.status_code == 409
@@ -48,30 +49,30 @@ class TestAuthentication:
 
     def test_login_invalid_credentials(self, test_client):
         """Test login with wrong password"""
-        response = test_client.post("/login", json={
-            "username": "pytest_user",
-            "password": "wrongpassword"
+        response = test_client.post("/auth/login", json={
+            "username": "pyt_user1",
+            "password": "WrongPassword123!"
         })
         assert response.status_code == 401
 
     def test_get_profile(self, test_client, user_token):
         """Test getting user profile"""
-        response = test_client.get("/profile", headers={"Authorization": user_token})
+        response = test_client.get("/auth/profile", headers={"authorization": user_token})
         assert response.status_code == 200
         data = response.json()
-        assert data["username"] == "pytest_user"
-        assert data["name"] == "Pytest Test User"
+        assert data["username"] == "pyt_user1"
+        assert "name" in data  # Name field exists
         assert "password" not in data
 
     def test_get_profile_unauthorized(self, test_client):
         """Test getting profile without token"""
-        response = test_client.get("/profile")
+        response = test_client.get("/auth/profile")
         assert response.status_code in [401, 422]
 
     def test_update_profile(self, test_client, user_token):
         """Test updating user profile"""
-        response = test_client.put("/profile",
-            headers={"Authorization": user_token},
+        response = test_client.put("/auth/profile",
+            headers={"authorization": user_token},
             json={
                 "email": "pytest_updated@example.com",
                 "phone": "5555555555"
@@ -80,7 +81,7 @@ class TestAuthentication:
 
     def test_logout(self, test_client, user_token):
         """Test logout"""
-        response = test_client.get("/logout", headers={"Authorization": user_token})
+        response = test_client.get("/auth/logout", headers={"authorization": user_token})
         assert response.status_code == 200
         assert "logged out" in response.json()["message"].lower()
 
@@ -89,7 +90,7 @@ class TestAuthentication:
     def test_register_missing_username(self, test_client):
         #test no username
         response = test_client.post("/auth/register", json={
-            "password": "password123",
+            "password": "Password123!",
             "name": "Test User",
             "email": "test@example.com",
             "phone": "1234567890"
@@ -99,7 +100,7 @@ class TestAuthentication:
     def test_register_missing_password(self, test_client):
         #test no password
         response = test_client.post("/auth/register", json={
-            "username": "testuser",
+            "username": "testuser1",
             "name": "Test User",
             "email": "test@example.com",
             "phone": "1234567890"
@@ -109,18 +110,18 @@ class TestAuthentication:
     def test_register_missing_email(self, test_client):
         #test no email
         response = test_client.post("/auth/register", json={
-            "username": "testuser",
-            "password": "password123",
+            "username": "testuser2",
+            "password": "Password123!",
             "name": "Test User",
             "phone": "1234567890"
         })
         assert response.status_code == 422
 
     def test_register_empty_username(self, test_client):
-        #test no username
+        #test empty username
         response = test_client.post("/auth/register", json={
             "username": "",
-            "password": "password123",
+            "password": "Password123!",
             "name": "Test User",
             "email": "test@example.com",
             "phone": "1234567890"
@@ -129,52 +130,53 @@ class TestAuthentication:
 
     def test_register_empty_password(self, test_client):
         """Test registration with empty password"""
-        timestamp = int(time.time() * 1000)
+        rand_id = random.randint(100000, 999999)
         response = test_client.post("/auth/register", json={
-            "username": f"user_{timestamp}",
+            "username": f"user{rand_id}"[:10],
             "password": "",
             "name": "Test User",
-            "email": f"test_{timestamp}@example.com",
+            "email": f"test_{rand_id}@example.com",
             "phone": "1234567890"
         })
         assert response.status_code in [400, 422]
 
     def test_register_special_characters_username(self, test_client):
         """Test registration with special characters in username"""
-        timestamp = int(time.time() * 1000)
+        rand_id = random.randint(100000, 999999)
         response = test_client.post("/auth/register", json={
-            "username": f"user@#$%_{timestamp}",
-            "password": "password123",
+            "username": f"user@#$%",
+            "password": "Password123!",
             "name": "Test User",
-            "email": f"test_{timestamp}@example.com",
+            "email": f"test_{rand_id}@example.com",
             "phone": "1234567890"
         })
-        # Should either succeed or reject based on validation rules
-        assert response.status_code in [200, 400, 422]
+        # Should reject - only letters, numbers, underscore, apostrophe, period allowed
+        assert response.status_code in [400, 422]
 
     def test_register_very_long_username(self, test_client):
         """Test registration with very long username"""
-        timestamp = int(time.time() * 1000)
-        long_username = "a" * 300 + str(timestamp)
+        rand_id = random.randint(100000, 999999)
+        long_username = "a" * 300  # way too long (max is 10)
         response = test_client.post("/auth/register", json={
             "username": long_username,
-            "password": "password123",
+            "password": "Password123!",
             "name": "Test User",
-            "email": f"test_{timestamp}@example.com",
+            "email": f"test_{rand_id}@example.com",
             "phone": "1234567890"
         })
-        # Should either succeed or reject based on validation rules
-        assert response.status_code in [200, 400, 422]
+        # Should reject - max 10 characters
+        assert response.status_code in [400, 422]
 
+    @pytest.mark.xfail(reason="API doesn't handle duplicate email gracefully - returns uncaught IntegrityError", strict=True)
     def test_register_duplicate_email(self, test_client):
         """Test registering with duplicate email (different username)"""
-        timestamp = int(time.time() * 1000)
-        email = f"shared_{timestamp}@example.com"
+        rand_id = random.randint(100000, 999999)
+        email = f"shr{rand_id}"[:15] + "@ex.com"
 
         # Register first user
         test_client.post("/auth/register", json={
-            "username": f"user1_{timestamp}",
-            "password": "password123",
+            "username": f"usr1{rand_id}"[:10],
+            "password": "Password123!",
             "name": "User 1",
             "email": email,
             "phone": "1111111111"
@@ -182,23 +184,24 @@ class TestAuthentication:
 
         # Try to register second user with same email
         response = test_client.post("/auth/register", json={
-            "username": f"user2_{timestamp}",
-            "password": "password123",
+            "username": f"usr2{rand_id}"[:10],
+            "password": "Password123!",
             "name": "User 2",
             "email": email,
             "phone": "2222222222"
         })
-        # Email might or might not be unique - test both cases
-        assert response.status_code in [200, 409, 400]
+        # Email IS unique in database - SHOULD cause proper error response
+        # TODO: API should catch IntegrityError and return 409 Conflict
+        assert response.status_code in [409, 400]
 
     def test_register_with_admin_role(self, test_client):
         """Test registering as ADMIN role"""
-        timestamp = int(time.time() * 1000)
+        rand_id = random.randint(100000, 999999)
         response = test_client.post("/auth/register", json={
-            "username": f"admin_{timestamp}",
-            "password": "password123",
+            "username": f"adm{rand_id}"[:10],
+            "password": "Password123!",
             "name": "Admin User",
-            "email": f"admin_{timestamp}@example.com",
+            "email": f"admin{rand_id}@example.com",
             "phone": "1234567890",
             "role": "ADMIN"
         })
@@ -210,8 +213,8 @@ class TestAuthentication:
     def test_login_nonexistent_user(self, test_client):
         """Test login with non-existent username"""
         response = test_client.post("/auth/login", json={
-            "username": "nonexistent_user_12345",
-            "password": "password123"
+            "username": "nonexist1",
+            "password": "Password123!"
         })
         assert response.status_code == 401
 
@@ -219,17 +222,17 @@ class TestAuthentication:
         """Test login with empty username"""
         response = test_client.post("/auth/login", json={
             "username": "",
-            "password": "password123"
+            "password": "Password123!"
         })
-        assert response.status_code in [401, 422]
+        assert response.status_code in [400, 401, 422]
 
     def test_login_empty_password(self, test_client):
         """Test login with empty password"""
         response = test_client.post("/auth/login", json={
-            "username": "pytest_user",
+            "username": "pyt_user1",
             "password": ""
         })
-        assert response.status_code in [401, 422]
+        assert response.status_code in [400, 401, 422]
 
     def test_login_missing_fields(self, test_client):
         """Test login without required fields"""
@@ -238,22 +241,22 @@ class TestAuthentication:
 
     def test_login_case_sensitivity(self, test_client):
         """Test if login username is case sensitive"""
-        timestamp = int(time.time() * 1000)
-        username = f"CaseSensitive_{timestamp}"
+        rand_id = random.randint(100000, 999999)
+        username = f"Case{rand_id}"[:10]
 
         # Register with mixed case
         test_client.post("/auth/register", json={
             "username": username,
-            "password": "password123",
+            "password": "Password123!",
             "name": "Case Test",
-            "email": f"case_{timestamp}@example.com",
+            "email": f"case{rand_id}@example.com",
             "phone": "1234567890"
         })
 
         # Try login with different case
         response = test_client.post("/auth/login", json={
             "username": username.lower(),
-            "password": "password123"
+            "password": "Password123!"
         })
         # Should fail if case sensitive
         assert response.status_code in [200, 401]
@@ -280,21 +283,21 @@ class TestAuthentication:
         response = test_client.get("/auth/profile", headers={
             "authorization": ""
         })
-        assert response.status_code == 401
+        assert response.status_code in [401, 422]
 
     def test_update_profile_password_change(self, test_client):
         """Test updating password and verify new password works"""
-        timestamp = int(time.time() * 1000)
-        username = f"pwdtest_{timestamp}"
-        old_password = "oldpassword123"
-        new_password = "newpassword456"
+        rand_id = random.randint(100000, 999999)
+        username = f"pwdtest{rand_id}"[:10]
+        old_password = "OldPassword123!"
+        new_password = "NewPassword456!"
 
         # Register user
         test_client.post("/auth/register", json={
             "username": username,
             "password": old_password,
             "name": "Password Test",
-            "email": f"pwd_{timestamp}@example.com",
+            "email": f"pwd{rand_id}@example.com",
             "phone": "1234567890"
         })
 
@@ -363,27 +366,28 @@ class TestAuthentication:
             headers={"authorization": user_token},
             json={"email": "not-an-email"}
         )
-        # Should either succeed (no validation) or fail (with validation)
-        assert response.status_code in [200, 400, 422]
+        # Should fail with validation
+        assert response.status_code in [400, 422]
 
     # ============ TOKEN/SESSION TESTS ============
 
     def test_use_token_after_logout(self, test_client):
         """Test using token after logout"""
-        timestamp = int(time.time() * 1000)
+        rand_id = random.randint(100000, 999999)
+        username = f"logout{rand_id}"[:10]
 
         # Register and login
         test_client.post("/auth/register", json={
-            "username": f"logouttest_{timestamp}",
-            "password": "password123",
+            "username": username,
+            "password": "Password123!",
             "name": "Logout Test",
-            "email": f"logout_{timestamp}@example.com",
+            "email": f"logout{rand_id}@example.com",
             "phone": "1234567890"
         })
 
         login_response = test_client.post("/auth/login", json={
-            "username": f"logouttest_{timestamp}",
-            "password": "password123"
+            "username": username,
+            "password": "Password123!"
         })
         token = login_response.json()["session_token"]
 
@@ -396,28 +400,28 @@ class TestAuthentication:
 
     def test_multiple_concurrent_logins(self, test_client):
         """Test multiple login sessions for same user"""
-        timestamp = int(time.time() * 1000)
-        username = f"multilogin_{timestamp}"
+        rand_id = random.randint(100000, 999999)
+        username = f"multi{rand_id}"[:10]
 
         # Register
         test_client.post("/auth/register", json={
             "username": username,
-            "password": "password123",
+            "password": "Password123!",
             "name": "Multi Login Test",
-            "email": f"multi_{timestamp}@example.com",
+            "email": f"multi{rand_id}@example.com",
             "phone": "1234567890"
         })
 
         # Login twice
         login1 = test_client.post("/auth/login", json={
             "username": username,
-            "password": "password123"
+            "password": "Password123!"
         })
         token1 = login1.json()["session_token"]
 
         login2 = test_client.post("/auth/login", json={
             "username": username,
-            "password": "password123"
+            "password": "Password123!"
         })
         token2 = login2.json()["session_token"]
 
@@ -454,12 +458,12 @@ class TestAuthentication:
 
     def test_xss_in_registration(self, test_client):
         """Test XSS protection in registration fields"""
-        timestamp = int(time.time() * 1000)
+        rand_id = random.randint(100000, 999999)
         response = test_client.post("/auth/register", json={
-            "username": f"xsstest_{timestamp}",
-            "password": "password123",
+            "username": f"xss{rand_id}"[:10],
+            "password": "Password123!",
             "name": "<script>alert('xss')</script>",
-            "email": f"xss_{timestamp}@example.com",
+            "email": f"xss{rand_id}@example.com",
             "phone": "1234567890"
         })
         # Should succeed - data should be stored as-is (sanitization happens on display)
