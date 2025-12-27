@@ -21,8 +21,17 @@ async def elastic_request_logger(request: Request, call_next):
     finally:
         duration = round((time.time() - start) * 1000, 2)
 
-        # Hardcoded for testing
-        if getattr(response, "status_code", None) != 200:
+        if getattr(response, "status_code", None) == 500:
+            log_event(
+                level="ERROR",
+                event="http_request",
+                method=request.method,
+                path=request.url.path,
+                status_code=getattr(response, "status_code", None),
+                response_time_ms=duration,
+                exc_info=True,
+            )
+        elif getattr(response, "status_code", None) != 200:
             log_event(
                 level="ERROR",
                 event="http_request",
