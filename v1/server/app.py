@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 import os
-from logging_config import log_event
+from v1.server.logging_config import log_event
 import time
 
 from .routers import auth, parking_lots, reservations, vehicles, payments
@@ -21,14 +21,25 @@ async def elastic_request_logger(request: Request, call_next):
     finally:
         duration = round((time.time() - start) * 1000, 2)
 
-        log_event(
-            level="INFO",
-            event="http_request",
-            method=request.method,
-            path=request.url.path,
-            status_code=getattr(response, "status_code", None),
-            response_time_ms=duration,
-        )
+        # Hardcoded for testing
+        if getattr(response, "status_code", None) != 200:
+            log_event(
+                level="ERROR",
+                event="http_request",
+                method=request.method,
+                path=request.url.path,
+                status_code=getattr(response, "status_code", None),
+                response_time_ms=duration,
+            )
+        else:
+            log_event(
+                level="INFO",
+                event="http_request",
+                method=request.method,
+                path=request.url.path,
+                status_code=getattr(response, "status_code", None),
+                response_time_ms=duration,
+            )
 
 app.add_middleware(
     CORSMiddleware,

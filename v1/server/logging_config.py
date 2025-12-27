@@ -1,7 +1,7 @@
 from elasticsearch import Elasticsearch
 from datetime import datetime
 
-es = Elasticsearch("httpL//localhost:9200")
+es = Elasticsearch("http://localhost:9200")
 
 
 def log_event(level: str, event: str, **fields):
