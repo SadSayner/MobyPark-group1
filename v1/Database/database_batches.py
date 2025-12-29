@@ -1228,10 +1228,9 @@ def load_parking_sessions(debug=False):
     return all_sessions
 
 
-def make_batches(all_info, batch_size: int = 400000, debug: bool = False):
-    all_sessions = load_parking_sessions(debug)
-    for start in range(0, len(all_sessions), batch_size):
-        yield all_sessions[start: start + batch_size]
+def make_batches(all_info, batch_size: int = 400000):
+    for start in range(0, len(all_info), batch_size):
+        yield all_info[start: start + batch_size]
 
 
 # ------------------- Wipe table ----------------------------
@@ -1279,20 +1278,19 @@ def fill_database():
     )
 
     all_sessions = load_parking_sessions(True)
-    batches = make_batches(all_sessions, 400000, debug=True)
+    batches = make_batches(all_sessions, 400000)
     for batch in batches:
         result = insert_parking_sessions(conn, batch, debug=True)
         print(
             f"In batch: inserted={result['inserted']}, failed={result['failed']}")
 
     payments = load_data("v1/data/payments.json")
-    batches = make_batches(payments, 400000, debug=True)
+    batches = make_batches(payments, 400000)
     for batch in batches:
         result = insert_payments(conn, batch, debug=True)
         print(
             f"In batch: inserted={result['inserted']}, failed={result['failed']}, duplicates={result.get('duplicates', 0)}"
         )
-    print("payments:", insert_payments(conn, payments, debug=True))
     delete_user_alias_csv()
 
 
