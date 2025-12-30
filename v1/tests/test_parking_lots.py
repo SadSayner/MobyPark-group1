@@ -220,6 +220,12 @@ class TestParkingLotsCRUD:
         # Empty update might succeed (no changes) or fail (validation)
         assert response.status_code in [200, 400, 422]
 
+    def test_update_parking_lot_invalid_data(self, test_client, admin_token, parking_lot_id):
+        """Test updating parking lot with invalid data"""
+        response = test_client.put(f"/parking-lots/{parking_lot_id}",
+            headers={"authorization": admin_token},
+            json={"capacity": -100})
+        assert response.status_code in [400, 422]
 
     # ============ DELETE TESTS ============
 
