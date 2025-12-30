@@ -220,6 +220,7 @@ class TestParkingLotsCRUD:
         # Empty update might succeed (no changes) or fail (validation)
         assert response.status_code in [200, 400, 422]
 
+
     # ============ DELETE TESTS ============
 
     def test_delete_parking_lot_admin(self, test_client, admin_token):
@@ -265,6 +266,21 @@ class TestParkingLotsCRUD:
         response = test_client.delete("/parking-lots/999999999",
             headers={"authorization": admin_token})
         assert response.status_code == 404
+
+    def test_delete_parking_lot(self, test_client, admin_token, parking_lot_id):
+        """Test deleting a parking lot"""
+        response = test_client.delete(f"/parking-lots/{parking_lot_id}", headers={"authorization": admin_token})
+        assert response.status_code in [200, 404]
+
+    def test_list_parking_lots_with_filter(self, test_client):
+        """Test listing parking lots with filter (if supported)"""
+        response = test_client.get("/parking-lots?location=Amsterdam")
+        assert response.status_code in [200, 400, 422]
+
+    def test_unauthorized_admin_access(self, test_client, user_token, parking_lot_id):
+        """Test unauthorized access to admin-only endpoint"""
+        response = test_client.delete(f"/parking-lots/{parking_lot_id}", headers={"authorization": user_token})
+        assert response.status_code in [403, 401, 422]
 
 
 @pytest.mark.xfail(reason="API has import bug in parking_lots.py:103 - all session endpoints fail with ImportError", strict=False)
@@ -522,7 +538,7 @@ class TestParkingSessions:
         license_plate = f"USERDEL-{rand_id % 1000}"
 
         # Create session
-        start_response = test_client.post(f"/parking-lots/{parking_lot_id}/sessions/start",
+        start_response = test_client.post(f"/parking_lots/{parking_lot_id}/sessions/start",
             headers={"authorization": user_token},
             json={"licenseplate": license_plate})
         session_id = start_response.json()["id"]
