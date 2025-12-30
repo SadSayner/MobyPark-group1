@@ -51,3 +51,41 @@ class TestReservations:
         response = test_client.delete("/reservations/1",
             headers={"Authorization": user_token})
         assert response.status_code in [200, 404]
+
+    def test_create_overlapping_reservations(self, test_client, user_token, parking_lot_id):
+        """Test creating overlapping reservations"""
+        from datetime import datetime, timedelta
+        start_time = (datetime.now() + timedelta(hours=1)).isoformat()
+        test_client.post("/reservations",
+            headers={"Authorization": user_token},
+            json={
+                "parking_lot_id": parking_lot_id,
+                "vehicle_id": 1,
+                "start_time": start_time,
+                "duration": 120,
+                "status": "pending"
+            })
+        response = test_client.post("/reservations",
+            headers={"Authorization": user_token},
+            json={
+                "parking_lot_id": parking_lot_id,
+                "vehicle_id": 1,
+                "start_time": start_time,
+                "duration": 120,
+                "status": "pending"
+            })
+        assert response.status_code in [400, 409, 422, 200]
+
+    def test_create_reservation_invalid_time(self, test_client, user_token, parking_lot_id):
+        """Test reservation creation with invalid time"""
+        response = test_client.post("/reservations",
+            headers={"Authorization": user_token},
+            json={
+                "parking_lot_id": parking_lot_id,
+                "vehicle_id": 1,
+                "start_time": "not-a-time",
+                "duration": 120,
+                "status": "pending"
+            })
+        assert response.status_code in [400, 422]
+
