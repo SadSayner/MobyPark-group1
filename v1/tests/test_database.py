@@ -52,6 +52,33 @@ def teardown_module(module):
     if os.path.exists(TEST_DB):
         os.remove(TEST_DB)
 
+class DummyUser:
+    def __init__(self, username=None, email=None):
+        import uuid
+        self.id = None
+        self.username = username or f"user_{uuid.uuid4().hex[:8]}"
+        self.password = "pass123"
+        self.name = "Test User"
+        self.email = email or f"{self.username}@example.com"
+        self.phone = "1234567890"
+        self.role = "USER"
+        self.created_at = datetime.now().strftime("%Y-%m-%d")
+        self.birth_year = 1990
+        self.active = True
 
+class DummyParkingLot:
+    def __init__(self, name=None):
+        import uuid
+        self.id = None
+        self.name = name or f"Lot_{uuid.uuid4().hex[:8]}"
+        self.location = "Test Location"
+        self.address = "Test Address"
+        self.capacity = 10
+        self.reserved = 0
+        self.tariff = 2.5
+        self.daytariff = 20.0
+        self.created_at = datetime.now().strftime("%Y-%m-%d")
+        self.lat = 52.0
+        self.lng = 4.0
 
 
