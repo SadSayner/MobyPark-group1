@@ -493,4 +493,36 @@ class TestAuthentication:
         })
         assert response.status_code in [400, 422]
 
+    def test_register_invalid_role(self, test_client):
+        """Test registration with invalid role value"""
+        rand_id = random.randint(100000, 999999)
+        response = test_client.post("/auth/register", json={
+            "username": f"invrole{rand_id}"[:10],
+            "password": "Password123!",
+            "name": "Test User",
+            "email": f"invrole{rand_id}@example.com",
+            "phone": "1234567890",
+            "role": "NOTAROLE"
+        })
+        assert response.status_code in [400, 422]
+
+    def test_register_weak_password(self, test_client):
+        """Test registration with weak password"""
+        rand_id = random.randint(100000, 999999)
+        response = test_client.post("/auth/register", json={
+            "username": f"weakpwd{rand_id}"[:10],
+            "password": "123",
+            "name": "Test User",
+            "email": f"weakpwd{rand_id}@example.com",
+            "phone": "1234567890"
+        })
+        assert response.status_code in [400, 422]
+
+    def test_update_profile_invalid_email(self, test_client, user_token):
+        """Test updating profile with invalid email format"""
+        response = test_client.put("/auth/profile",
+            headers={"authorization": user_token},
+            json={"email": "not-an-email"})
+        assert response.status_code in [400, 422]
+
 
