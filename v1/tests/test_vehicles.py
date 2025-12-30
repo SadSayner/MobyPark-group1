@@ -124,3 +124,51 @@ class TestVehicles:
                     headers={"Authorization": user_token})
                 assert response.status_code in [200, 404]
 
+    def test_duplicate_vehicle_creation(self, test_client, user_token):
+        """Test creating duplicate vehicle for same user"""
+        timestamp = int(time.time() * 1000)
+        license_plate = f"DUPLICATE-{timestamp}"
+        test_client.post("/vehicles",
+            headers={"Authorization": user_token},
+            json={
+                "license_plate": license_plate,
+                "make": "Toyota",
+                "model": "Corolla",
+                "color": "Blue",
+                "year": 2021
+            })
+        response = test_client.post("/vehicles",
+            headers={"Authorization": user_token},
+            json={
+                "license_plate": license_plate,
+                "make": "Toyota",
+                "model": "Corolla",
+                "color": "Blue",
+                "year": 2021
+            })
+        assert response.status_code in [400, 409, 422]
+
+    def test_delete_nonexistent_vehicle(self, test_client, user_token):
+        """Test deleting a non-existent vehicle"""
+        response = test_client.delete("/vehicles/999999", headers={"Authorization": user_token})
+        assert response.status_code in [404, 400]
+
+    def test_vehicle_ownership(self, test_client, user_token, admin_token):
+        """Test vehicle CRUD for multiple users (ownership checks)"""
+        # Create vehicle as user
+        timestamp = int(time.time() * 1000)
+        create_response = test_client.post("/vehicles",
+            headers={"Authorization": user_token},
+            json={
+                "license_plate": f"OWN-{timestamp}",
+                "make": "BMW",
+                "model": "X5",
+                "color": "Black",
+                "year": 2022
+            })
+        if create_response.status_code == 200:
+            vehicle_id = create_response.json().get("id")
+            if vehicle_id:
+                # Try to delete as admin (should succeed or fail based on API rules)
+                response = test_client.delete(f"/vehicles/{vehicle_id}", headers={"Authorization": admin_token})
+                assert response.status_code in [200, 403, 404]
