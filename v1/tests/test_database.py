@@ -81,4 +81,43 @@ class DummyParkingLot:
         self.lat = 52.0
         self.lng = 4.0
 
+class TestDatabaseLogic:
+    def test_insert_and_get_user(self):
+        con = sqlite3.connect(TEST_DB)
+        con.row_factory = sqlite3.Row
+        user = DummyUser()
+        user_id = database_logic.insert_user(con, user)
+        assert user_id > 0
+        fetched = database_logic.get_user_by_id(con, user_id)
+        assert fetched.username == user.username
+        con.close()
 
+    def test_insert_and_get_parking_lot(self):
+        con = sqlite3.connect(TEST_DB)
+        con.row_factory = sqlite3.Row
+        lot = DummyParkingLot()
+        lot_id = database_logic.insert_parking_lot(con, lot)
+        assert lot_id > 0
+        fetched = database_logic.get_parking_lot_by_id(con, lot_id)
+        assert fetched.name == lot.name
+        con.close()
+
+    def test_record_exists(self):
+        con = sqlite3.connect(TEST_DB)
+        con.row_factory = sqlite3.Row
+        user = DummyUser()
+        database_logic.insert_user(con, user)
+        exists = database_logic.record_exists(con, "users", {"username": user.username})
+        assert exists is True
+        not_exists = database_logic.record_exists(con, "users", {"username": "nope"})
+        assert not_exists is False
+        con.close()
+
+    def test_get_all_users_and_parking_lots(self):
+        con = sqlite3.connect(TEST_DB)
+        con.row_factory = sqlite3.Row
+        users = database_logic.get_all_users(con)
+        lots = database_logic.get_all_parking_lots(con)
+        assert isinstance(users, list)
+        assert isinstance(lots, list)
+        con.close()
