@@ -468,3 +468,29 @@ class TestAuthentication:
         })
         # Should succeed - data should be stored as-is (sanitization happens on display)
         assert response.status_code == 200
+
+    def test_register_invalid_email_format(self, test_client):
+        """Test registration with invalid email format"""
+        rand_id = random.randint(100000, 999999)
+        response = test_client.post("/auth/register", json={
+            "username": f"invemail{rand_id}"[:10],
+            "password": "Password123!",
+            "name": "Test User",
+            "email": "not-an-email",
+            "phone": "1234567890"
+        })
+        assert response.status_code in [400, 422]
+
+    def test_register_invalid_phone_format(self, test_client):
+        """Test registration with invalid phone format"""
+        rand_id = random.randint(100000, 999999)
+        response = test_client.post("/auth/register", json={
+            "username": f"invphone{rand_id}"[:10],
+            "password": "Password123!",
+            "name": "Test User",
+            "email": f"invphone{rand_id}@example.com",
+            "phone": "abcde"
+        })
+        assert response.status_code in [400, 422]
+
+
