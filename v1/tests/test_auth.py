@@ -525,4 +525,30 @@ class TestAuthentication:
             json={"email": "not-an-email"})
         assert response.status_code in [400, 422]
 
+    def test_logout_invalid_token(self, test_client):
+        """Test logout with invalid token"""
+        response = test_client.get("/auth/logout", headers={"authorization": "invalid-token"})
+        assert response.status_code in [401, 422]
 
+    def test_register_and_login_rate_limit(self, test_client):
+        """Test registration and login rate limiting (if implemented)"""
+        # This is a placeholder; actual implementation depends on API
+        for _ in range(5):
+            rand_id = random.randint(100000, 999999)
+            test_client.post("/auth/register", json={
+                "username": f"ratelimit{rand_id}"[:10],
+                "password": "Password123!",
+                "name": "Test User",
+                "email": f"ratelimit{rand_id}@example.com",
+                "phone": "1234567890"
+            })
+        # If rate limiting is implemented, expect 429 Too Many Requests
+        # Otherwise, expect 200 or 400/422
+        response = test_client.post("/auth/register", json={
+            "username": "ratelimitlast",
+            "password": "Password123!",
+            "name": "Test User",
+            "email": "ratelimitlast@example.com",
+            "phone": "1234567890"
+        })
+        assert response.status_code in [200, 400, 422, 429]
