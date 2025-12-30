@@ -82,6 +82,26 @@ class TestVehicles:
                     })
                 assert response.status_code in [200, 404]
 
+    def test_update_vehicle_invalid_year(self, test_client, user_token):
+        """Test updating vehicle with invalid year"""
+        timestamp = int(time.time() * 1000)
+        create_response = test_client.post("/vehicles",
+            headers={"Authorization": user_token},
+            json={
+                "license_plate": f"YEAR-{timestamp}",
+                "make": "Ford",
+                "model": "Fiesta",
+                "color": "Red",
+                "year": 2020
+            })
+        if create_response.status_code == 200:
+            vehicle_id = create_response.json().get("id")
+            if vehicle_id:
+                response = test_client.put(f"/vehicles/{vehicle_id}",
+                    headers={"Authorization": user_token},
+                    json={"year": 1800})  # Invalid year
+                assert response.status_code in [400, 422]
+
     def test_delete_vehicle(self, test_client, user_token):
         """Test deleting a vehicle"""
         # First create a vehicle to delete
@@ -103,3 +123,4 @@ class TestVehicles:
                 response = test_client.delete(f"/vehicles/{vehicle_id}",
                     headers={"Authorization": user_token})
                 assert response.status_code in [200, 404]
+
