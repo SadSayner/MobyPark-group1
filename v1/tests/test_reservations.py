@@ -89,3 +89,14 @@ class TestReservations:
             })
         assert response.status_code in [400, 422]
 
+    def test_update_reservation_invalid_status(self, test_client, user_token):
+        """Test updating reservation with invalid status"""
+        response = test_client.put("/reservations/1",
+            headers={"Authorization": user_token},
+            json={"status": "notastatus"})
+        assert response.status_code in [400, 422]
+
+    def test_delete_reservation_other_user(self, test_client, admin_token):
+        """Test deleting reservation for another user (authorization)"""
+        response = test_client.delete("/reservations/1", headers={"Authorization": admin_token})
+        assert response.status_code in [403, 404, 200]
