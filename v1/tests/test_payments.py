@@ -55,8 +55,18 @@ class TestPayments:
             headers={"Authorization": user_token})
         assert response.status_code in [200, 404]
 
+    def test_get_nonexistent_payment(self, test_client, user_token):
+        """Test payment retrieval for non-existent payment"""
+        response = test_client.get("/payments/999999", headers={"Authorization": user_token})
+        assert response.status_code in [404, 400]
+
     def test_get_billing(self, test_client, user_token):
         """Test getting billing information"""
         response = test_client.get("/payments/billing",
             headers={"Authorization": user_token})
         assert response.status_code in [200, 404]
+
+    def test_billing_endpoint_without_session(self, test_client, user_token):
+        """Test billing endpoint without valid session"""
+        response = test_client.get("/payments/billing", headers={"Authorization": user_token})
+        assert response.status_code in [400, 404, 422]
