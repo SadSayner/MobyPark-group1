@@ -100,3 +100,47 @@ class TestReservations:
         """Test deleting reservation for another user (authorization)"""
         response = test_client.delete("/reservations/1", headers={"Authorization": admin_token})
         assert response.status_code in [403, 404, 200]
+
+    @pytest.mark.parametrize("duration,expected_status", [
+        (120, [200, 201, 400, 404]),
+        (-10, [400, 422]),
+        (0, [400, 422]),
+    ])
+    def test_create_reservation_various_durations(self, test_client, user_token, parking_lot_id, duration, expected_status):
+        """Test creating reservation with various durations"""
+        from datetime import datetime, timedelta
+        start_time = (datetime.now() + timedelta(hours=1)).isoformat()
+        response = test_client.post("/reservations",
+            headers={"Authorization": user_token},
+            json={
+                "parking_lot_id": parking_lot_id,
+                "vehicle_id": 1,
+                "start_time": start_time,
+                "duration": duration,
+                "status": "pending"
+            })
+        assert response.status_code in expected_status
+
+    def test_reservation_for_nonexistent_parking_lot(self, test_client, user_token):
+        """Test reservation for non-existent parking lot"""
+        from datetime import datetime, timedelta
+        start_time = (datetime.now() + timedelta(hours=1)).isoformat()
+        response = test_client.post("/reservations",
+            headers={"Authorization": user_token},
+            json={
+                "parking_lot_id": 999999,
+                "vehicle_id": 1,
+                "start_time": start_time,
+                "duration": 120,
+                "status": "pending"
+            })
+        assert response.status_code in [404, 400]
+
+    def test_reservation_response_fields(self, test_client, user_token):
+        """Assert on returned reservation data fields"""
+        response = test_client.get("/reservations", headers={"Authorization": user_token})
+        if response.status_code == 200:
+            reservations = response.json()
+            for r in reservations:
+                for field in ["id", "parking_lot_id", "vehicle_id", "start_time", "duration", "status"]:
+                    assert field in r

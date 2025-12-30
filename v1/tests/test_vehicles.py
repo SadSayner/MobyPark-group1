@@ -172,3 +172,57 @@ class TestVehicles:
                 # Try to delete as admin (should succeed or fail based on API rules)
                 response = test_client.delete(f"/vehicles/{vehicle_id}", headers={"Authorization": admin_token})
                 assert response.status_code in [200, 403, 404]
+
+    @pytest.mark.parametrize("year,expected_status", [
+        (2020, [200]),
+        (1800, [400, 422]),
+        (3000, [400, 422]),
+    ])
+    def test_create_vehicle_various_years(self, test_client, user_token, year, expected_status):
+        """Test creating vehicle with various years"""
+        timestamp = int(time.time() * 1000)
+        response = test_client.post("/vehicles",
+            headers={"Authorization": user_token},
+            json={
+                "license_plate": f"YEAR-{timestamp}",
+                "make": "Ford",
+                "model": "Fiesta",
+                "color": "Red",
+                "year": year
+            })
+        assert response.status_code in expected_status
+
+    def test_update_vehicle_partial_data(self, test_client, user_token):
+        """Test updating vehicle with partial data"""
+        timestamp = int(time.time() * 1000)
+        create_response = test_client.post("/vehicles",
+            headers={"Authorization": user_token},
+            json={
+                "license_plate": f"PARTIAL-{timestamp}",
+                "make": "Ford",
+                "model": "Focus",
+                "color": "White",
+                "year": 2018
+            })
+        if create_response.status_code == 200:
+            vehicle_id = create_response.json().get("id")
+            if vehicle_id:
+                response = test_client.put(f"/vehicles/{vehicle_id}",
+                    headers={"Authorization": user_token},
+                    json={"color": "Silver"})
+                assert response.status_code in [200, 404]
+
+    def test_list_vehicles_no_vehicles(self, test_client, admin_token):
+        """Test listing vehicles for user with no vehicles (admin)"""
+        response = test_client.get("/vehicles", headers={"Authorization": admin_token})
+        assert response.status_code == 200
+        assert isinstance(response.json(), list)
+
+    def test_vehicle_response_fields(self, test_client, user_token):
+        """Assert on returned vehicle data fields"""
+        response = test_client.get("/vehicles", headers={"Authorization": user_token})
+        if response.status_code == 200:
+            vehicles = response.json()
+            for v in vehicles:
+                for field in ["id", "license_plate", "make", "model", "color", "year"]:
+                    assert field in v
