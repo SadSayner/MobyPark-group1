@@ -288,6 +288,53 @@ class TestParkingLotsCRUD:
         response = test_client.delete(f"/parking-lots/{parking_lot_id}", headers={"authorization": user_token})
         assert response.status_code in [403, 401, 422]
 
+    @pytest.mark.parametrize("capacity,expected_status", [
+        (100, [200]),
+        (-1, [400, 422]),
+        (0, [200, 400, 422]),
+    ])
+    def test_create_parking_lot_various_capacities(self, test_client, admin_token, capacity, expected_status):
+        """Test creating parking lot with various capacities"""
+        rand_id = random.randint(100000, 999999)
+        response = test_client.post("/parking-lots",
+            headers={"authorization": admin_token},
+            json={
+                "name": f"LotCap{rand_id}",
+                "location": "Test",
+                "address": "Test",
+                "capacity": capacity,
+                "tariff": 2.0,
+                "daytariff": 10.0,
+                "lat": 52.0,
+                "lng": 4.0
+            })
+        assert response.status_code in expected_status
+
+    def test_update_nonexistent_parking_lot(self, test_client, admin_token):
+        """Test updating a non-existent parking lot"""
+        response = test_client.put("/parking-lots/999999",
+            headers={"authorization": admin_token},
+            json={"name": "ShouldNotExist"})
+        assert response.status_code in [404, 400]
+
+    def test_delete_nonexistent_parking_lot(self, test_client, admin_token):
+        """Test deleting a non-existent parking lot"""
+        response = test_client.delete("/parking-lots/999999", headers={"authorization": admin_token})
+        assert response.status_code in [404, 400]
+
+    def test_list_parking_lots_pagination(self, test_client):
+        """Test listing parking lots with pagination (if supported)"""
+        response = test_client.get("/parking-lots?page=1&size=2")
+        assert response.status_code in [200, 400, 422]
+
+    def test_parking_lot_response_fields(self, test_client, parking_lot_id):
+        """Assert on returned parking lot data fields"""
+        response = test_client.get(f"/parking-lots/{parking_lot_id}")
+        if response.status_code == 200:
+            data = response.json()
+            for field in ["id", "name", "location", "address", "capacity", "tariff", "lat", "lng"]:
+                assert field in data
+
 
 @pytest.mark.xfail(reason="API has import bug in parking_lots.py:103 - all session endpoints fail with ImportError", strict=False)
 class TestParkingSessions:

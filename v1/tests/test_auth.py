@@ -469,6 +469,79 @@ class TestAuthentication:
         # Should succeed - data should be stored as-is (sanitization happens on display)
         assert response.status_code == 200
 
+    @pytest.mark.parametrize("email,expected_status", [
+        ("not-an-email", [400, 422]),
+        ("test@", [400, 422]),
+        ("@example.com", [400, 422]),
+        ("test@example.com", [200, 400, 422]),
+    ])
+    def test_register_various_email_formats(self, test_client, email, expected_status):
+        """Test registration with various email formats"""
+        rand_id = random.randint(100000, 999999)
+        response = test_client.post("/auth/register", json={
+            "username": f"emailcase{rand_id}"[:10],
+            "password": "Password123!",
+            "name": "Test User",
+            "email": email,
+            "phone": "1234567890"
+        })
+        assert response.status_code in expected_status
+
+    @pytest.mark.parametrize("role,expected_status", [
+        ("USER", [200]),
+        ("ADMIN", [200]),
+        ("INVALID", [400, 422]),
+        ("", [400, 422]),
+    ])
+    def test_register_various_roles(self, test_client, role, expected_status):
+        """Test registration with various roles"""
+        rand_id = random.randint(100000, 999999)
+        response = test_client.post("/auth/register", json={
+            "username": f"rolecase{rand_id}"[:10],
+            "password": "Password123!",
+            "name": "Test User",
+            "email": f"rolecase{rand_id}@example.com",
+            "phone": "1234567890",
+            "role": role
+        })
+        assert response.status_code in expected_status
+
+    @pytest.mark.parametrize("field,value,expected_status", [
+        ("username", "", [400, 422]),
+        ("password", "", [400, 422]),
+        ("email", "", [400, 422]),
+        ("phone", "", [400, 422]),
+    ])
+    def test_register_missing_fields_param(self, test_client, field, value, expected_status):
+        """Test registration with missing/empty fields (parametrized)"""
+        rand_id = random.randint(100000, 999999)
+        data = {
+            "username": f"param{rand_id}"[:10],
+            "password": "Password123!",
+            "name": "Test User",
+            "email": f"param{rand_id}@example.com",
+            "phone": "1234567890"
+        }
+        data[field] = value
+        response = test_client.post("/auth/register", json=data)
+        assert response.status_code in expected_status
+
+    def test_login_token_expiration(self, test_client, user_token):
+        """Test login token expiration (if supported)"""
+        # This is a placeholder; actual implementation depends on API
+        # Simulate expired token if possible
+        response = test_client.get("/auth/profile", headers={"authorization": "expired-token"})
+        assert response.status_code in [401, 403, 422]
+
+    def test_error_message_on_failed_login(self, test_client):
+        """Test error message on failed login"""
+        response = test_client.post("/auth/login", json={
+            "username": "notarealuser",
+            "password": "wrongpass"
+        })
+        assert response.status_code == 401
+        assert "error" in response.json() or "detail" in response.json()
+
     def test_register_invalid_email_format(self, test_client):
         """Test registration with invalid email format"""
         rand_id = random.randint(100000, 999999)

@@ -121,3 +121,33 @@ class TestDatabaseLogic:
         assert isinstance(users, list)
         assert isinstance(lots, list)
         con.close()
+
+    def test_update_user(self):
+        con = sqlite3.connect(TEST_DB)
+        con.row_factory = sqlite3.Row
+        user = DummyUser()
+        user_id = database_logic.insert_user(con, user)
+        # Update user
+        con.execute("UPDATE users SET name = ? WHERE id = ?", ("Updated Name", user_id))
+        fetched = database_logic.get_user_by_id(con, user_id)
+        assert fetched.name == "Updated Name"
+        con.close()
+
+    def test_delete_user(self):
+        con = sqlite3.connect(TEST_DB)
+        con.row_factory = sqlite3.Row
+        user = DummyUser()
+        user_id = database_logic.insert_user(con, user)
+        con.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        fetched = database_logic.get_user_by_id(con, user_id)
+        assert fetched is None
+        con.close()
+
+    def test_constraint_violation(self):
+        con = sqlite3.connect(TEST_DB)
+        con.row_factory = sqlite3.Row
+        user = DummyUser(username="uniqueuser")
+        database_logic.insert_user(con, user)
+        with pytest.raises(sqlite3.IntegrityError):
+            database_logic.insert_user(con, user)  # Duplicate username/email
+        con.close()
