@@ -19,8 +19,8 @@ import sys
 import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from ..storage_utils import *  # noqa
-from .database_creation import create_database  # noqa
+from storage_utils import *  # noqa
+from database_creation import create_database  # noqa
 
 Row = Dict[str, Any]
 Rows = Iterable[Row]
@@ -130,17 +130,17 @@ def calculate_duration(start_iso, end_iso):
     Assumes 'YYYY-MM-DDTHH:MM:SSZ' or with %z offset; trims to seconds.
     """
     try:
-        start_time = datetime.datetime.strptime(
+        start_time = datetime.strptime(
             start_iso.replace("Z", "+00:00"), "%Y-%m-%dT%H:%M:%S%z"
         )
-        start_time = datetime.datetime.strptime(
+        start_time = datetime.strptime(
             start_time.strftime("%Y-%m-%d %H:%M:%S"), "%Y-%m-%d %H:%M:%S"
         )
 
-        end_time = datetime.datetime.strptime(
+        end_time = datetime.strptime(
             end_iso.replace("Z", "+00:00"), "%Y-%m-%dT%H:%M:%S%z"
         )
-        end_time = datetime.datetime.strptime(
+        end_time = datetime.strptime(
             end_time.strftime("%Y-%m-%d %H:%M:%S"), "%Y-%m-%d %H:%M:%S"
         )
         minutes = int((end_time - start_time).total_seconds() / 60)
@@ -1276,19 +1276,19 @@ def fill_database():
                             users_source=users, debug=True),
     )
 
-    all_sessions = load_parking_sessions(True)
-    batches = make_batches(all_sessions, 400000)
-    for batch in batches:
-        result = insert_parking_sessions(conn, batch, debug=True)
-        print(
-            f"In batch: inserted={result['inserted']}, failed={result['failed']}")
+    # all_sessions = load_parking_sessions(True)
+    # batches = make_batches(all_sessions, 400000)
+    # for batch in batches:
+    #     result = insert_parking_sessions(conn, batch, debug=True)
+    #     print(
+    #         f"In batch: inserted={result['inserted']}, failed={result['failed']}")
 
-    payments = load_data("v1/data/payments.json")
-    batches = make_batches(payments, 400000)
-    for batch in batches:
-        result = insert_payments(conn, batch, debug=True)
-        print(
-            f"In batch: inserted={result['inserted']}, failed={result['failed']}, duplicates={result.get('duplicates', 0)}")
+    # payments = load_data("v1/data/payments.json")
+    # batches = make_batches(payments, 400000)
+    # for batch in batches:
+    #     result = insert_payments(conn, batch, debug=True)
+    #     print(
+    #         f"In batch: inserted={result['inserted']}, failed={result['failed']}, duplicates={result.get('duplicates', 0)}")
     delete_user_alias_csv()
 
 
