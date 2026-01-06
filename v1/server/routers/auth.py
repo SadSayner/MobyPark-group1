@@ -55,7 +55,7 @@ def register(payload: RegisterBody, con: sqlite3.Connection = Depends(get_db)):
     log_event("INFO", event="register_attempt", username=payload.username)
 
     if not is_valid_username(payload.username):
-        log_event("ERROR", event="register_failed",
+        log_event("WARNING", event="register_failed",
                   username=payload.username, reason="invalid_username")
         raise HTTPException(
             status_code=400,
@@ -63,7 +63,7 @@ def register(payload: RegisterBody, con: sqlite3.Connection = Depends(get_db)):
         )
 
     if not is_valid_password(payload.password):
-        log_event("ERROR", event="register_failed",
+        log_event("WARNING", event="register_failed",
                   username=payload.username, reason="invalid_password")
         raise HTTPException(
             status_code=400,
@@ -71,12 +71,12 @@ def register(payload: RegisterBody, con: sqlite3.Connection = Depends(get_db)):
         )
 
     if not is_valid_email(payload.email):
-        log_event("ERROR", event="register_failed",
+        log_event("WARNING", event="register_failed",
                   username=payload.username, reason="invalid_email")
         raise HTTPException(status_code=400, detail="Invalid email format.")
 
     if not is_valid_phone(payload.phone):
-        log_event("ERROR", event="register_failed",
+        log_event("WARNING", event="register_failed",
                   username=payload.username, reason="invalid_phone")
         raise HTTPException(
             status_code=400,
@@ -84,14 +84,14 @@ def register(payload: RegisterBody, con: sqlite3.Connection = Depends(get_db)):
         )
 
     if payload.role and not is_valid_role(payload.role):
-        log_event("ERROR", event="register_failed",
+        log_event("WARNING", event="register_failed",
                   username=payload.username, reason="invalid_role")
         raise HTTPException(
             status_code=400, detail="Invalid role. Must be 'USER' or 'ADMIN'.")
 
     existing_user = get_users_by_username(con, payload.username)
     if existing_user:
-        log_event("ERROR", event="register_failed",
+        log_event("WARNING", event="register_failed",
                   username=payload.username, reason="username_taken")
         raise HTTPException(status_code=409, detail="Username already taken")
 
@@ -128,7 +128,7 @@ def login(payload: LoginBody, con: sqlite3.Connection = Depends(get_db)):
         log_event("INFO", event="login_success",
                   username=user.username, role=user.role)
         return {"message": "Login successful", "session_token": session_token}
-    log_event("ERROR", event="login_failed",
+    log_event("WARNING", event="login_failed",
               username=payload.username, reason="invalid_credentials")
     raise HTTPException(status_code=401, detail="Invalid username or password")
 
