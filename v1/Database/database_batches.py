@@ -19,8 +19,8 @@ import sys
 import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from storage_utils import *  # noqa
-from database_creation import create_database  # noqa
+from ..storage_utils import *  # noqa
+from .database_creation import create_database  # noqa
 
 Row = Dict[str, Any]
 Rows = Iterable[Row]
@@ -114,7 +114,6 @@ def _make_in_clause(n: int) -> str:
 
 # ---------------------- DateTime helpers --------------------
 
-
 def calculate_duration(start_iso, end_iso):
     """
     Return duration in whole minutes between two ISO-like datetimes.
@@ -136,7 +135,6 @@ def calculate_duration(start_iso, end_iso):
         return None
 
 # ---------------------- Users helpers (email remap) -----------------------
-
 
 def extract_userid_to_email(users_source: Union[List[Row], Dict[str, Row]]) -> Dict[int, str]:
     """
@@ -1066,9 +1064,9 @@ def load_parking_sessions(debug=False):
 
 
 def make_batches(all_info, batch_size: int = 400000, debug: bool = False):
-    all_sessions = load_parking_sessions(debug)
-    for start in range(0, len(all_sessions), batch_size):
-        yield all_sessions[start:start + batch_size]
+    all_items = to_list_of_dicts(all_info)
+    for start in range(0, len(all_items), batch_size):
+        yield all_items[start:start + batch_size]
 
 
 # ------------------- Wipe table ----------------------------
@@ -1091,9 +1089,9 @@ def wipe_table(conn: sqlite3.Connection, table_name: str, *, reset_autoincrement
 
 
 def fill_database():
-    if not os.path.exists('v1\Database\MobyPark.db'):
-        print(f"Database 'v1\Database\MobyPark.db' bestaat niet.")
-        create_database('v1\Database\MobyPark.db')
+    if not os.path.exists('v1/Database/MobyPark.db'):
+        print(f"Database 'v1/Database/MobyPark.db' bestaat niet.")
+        create_database('v1/Database/MobyPark.db')
 
     conn = get_connection()
 
@@ -1123,7 +1121,6 @@ def fill_database():
         result = insert_payments(conn, batch, debug=True)
         print(
             f"In batch: inserted={result['inserted']}, failed={result['failed']}, duplicates={result.get('duplicates', 0)}")
-    print("payments:", insert_payments(conn, payments, debug=True))
     delete_user_alias_csv()
 
 
