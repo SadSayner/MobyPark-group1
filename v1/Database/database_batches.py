@@ -18,9 +18,9 @@ from datetime import *
 import sys
 import os
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from storage_utils import *  # noqa
-from database_creation import create_database  # noqa
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from ..storage_utils import *  # noqa
+from .database_creation import create_database  # noqa
 
 Row = Dict[str, Any]
 Rows = Iterable[Row]
@@ -123,7 +123,6 @@ def _make_in_clause(n: int) -> str:
 
 
 # ---------------------- DateTime helpers --------------------
-
 
 def calculate_duration(start_iso, end_iso):
     """
@@ -1255,9 +1254,9 @@ def wipe_table(
 
 
 def fill_database():
-    if not os.path.exists("v1\Database\MobyPark.db"):
-        print(f"Database 'v1\Database\MobyPark.db' bestaat niet.")
-        create_database("v1\Database\MobyPark.db")
+    if not os.path.exists('v1/Database/MobyPark.db'):
+        print(f"Database 'v1/Database/MobyPark.db' bestaat niet.")
+        create_database('v1/Database/MobyPark.db')
 
     conn = get_connection()
 
@@ -1289,8 +1288,7 @@ def fill_database():
     for batch in batches:
         result = insert_payments(conn, batch, debug=True)
         print(
-            f"In batch: inserted={result['inserted']}, failed={result['failed']}, duplicates={result.get('duplicates', 0)}"
-        )
+            f"In batch: inserted={result['inserted']}, failed={result['failed']}, duplicates={result.get('duplicates', 0)}")
     delete_user_alias_csv()
 
 

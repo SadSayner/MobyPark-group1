@@ -28,6 +28,17 @@ def create_database(db_path="v1/Database/MobyPark.db"):
         """
         )
 
+        # Auth sessions
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS auth_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            token TEXT NOT NULL UNIQUE,
+            user_id INTEGER NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        """)
+
         # Parking lots
         cur.execute(
             """
@@ -69,11 +80,14 @@ def create_database(db_path="v1/Database/MobyPark.db"):
             session_id INTEGER PRIMARY KEY AUTOINCREMENT,
             parking_lot_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
+            vehicle_id INTEGER,
             started TEXT NOT NULL,
+            stopped TEXT,
             duration_minutes INTEGER NOT NULL,
             payment_status TEXT NOT NULL,
             FOREIGN KEY (parking_lot_id) REFERENCES parking_lots(id) ON DELETE CASCADE,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE SET NULL
         );
         """
         )
