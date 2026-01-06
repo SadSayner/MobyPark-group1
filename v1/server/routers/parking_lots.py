@@ -100,24 +100,41 @@ def start_session(lid: str, data: Dict[str, Any] = Body(...), user = Depends(req
         raise HTTPException(400, detail={"error": "Require field missing", "field": "licenseplate"})
 
     #get user ID
-    from Database.database_logic import get_user_id_by_username
+    from ...Database.database_logic import get_user_id_by_username
     user_id = get_user_id_by_username(con, user["username"])
     if not user_id:
         raise HTTPException(400, detail="User not found")
 
-    #find or create vehicle with license 
+    #find or create vehicle with license plate
     license_plate = data["licenseplate"]
-    cur = con.execute("SELECT id FROM vehicles WHERE license_plate = ? AND user_id = ?", (license_plate, user_id))
+    cur = con.execute("SELECT id FROM vehicles WHERE license_plate = ?", (license_plate,))
     vehicle_row = cur.fetchone()
 
     if not vehicle_row:
+        # Create new vehicle with minimal info (license plate only)
         con.execute(
-            "INSERT INTO vehicles (user_id, license_plate, created_at) VALUES (?, ?, ?)",
-            (user_id, license_plate, now_str())
+            "INSERT INTO vehicles (license_plate, make, model, color, year, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (license_plate, "Unknown", "Unknown", "Unknown", 2000, now_str())
         )
         vehicle_id = con.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+        # Link vehicle to user in user_vehicles table
+        con.execute(
+            "INSERT INTO user_vehicles (user_id, vehicle_id) VALUES (?, ?)",
+            (user_id, vehicle_id)
+        )
     else:
         vehicle_id = vehicle_row["id"]
+
+        # Check if this vehicle is linked to this user
+        cur = con.execute("SELECT id FROM user_vehicles WHERE user_id = ? AND vehicle_id = ?", (user_id, vehicle_id))
+        link = cur.fetchone()
+        if not link:
+            # Link existing vehicle to this user
+            con.execute(
+                "INSERT INTO user_vehicles (user_id, vehicle_id) VALUES (?, ?)",
+                (user_id, vehicle_id)
+            )
 
     #check active sessions 
     cur = con.execute("SELECT * FROM sessions WHERE parking_lot_id = ? AND vehicle_id = ? AND stopped IS NULL", (lid, vehicle_id))
@@ -128,8 +145,8 @@ def start_session(lid: str, data: Dict[str, Any] = Body(...), user = Depends(req
     #insert new session
     started = now_str()
     cur = con.execute(
-        "INSERT INTO sessions (parking_lot_id, user_id, vehicle_id, started, payment_status) VALUES (?, ?, ?, ?, ?)",
-        (lid, user_id, vehicle_id, started, "unpaid")
+        "INSERT INTO sessions (parking_lot_id, user_id, vehicle_id, started, stopped, duration_minutes, payment_status) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (lid, user_id, vehicle_id, started, None, 0, "unpaid")
     )
     con.commit()
     session_id = cur.lastrowid
@@ -141,6 +158,7 @@ def start_session(lid: str, data: Dict[str, Any] = Body(...), user = Depends(req
         "vehicle_id": vehicle_id,
         "started": started,
         "stopped": None,
+        "duration_minutes": 0,
         "payment_status": "unpaid"
     }}
 
@@ -150,18 +168,23 @@ def stop_session(lid: str, data: Dict[str, Any] = Body(...), user = Depends(requ
         raise HTTPException(400, detail={"error": "Require field missing", "field": "licenseplate"})
 
     #fetch user id
-    from Database.database_logic import get_user_id_by_username
+    from ...Database.database_logic import get_user_id_by_username
     user_id = get_user_id_by_username(con, user["username"])
     if not user_id:
         raise HTTPException(400, detail="User not found")
 
     #look for vehicle
     license_plate = data["licenseplate"]
-    cur = con.execute("SELECT id FROM vehicles WHERE license_plate = ? AND user_id = ?", (license_plate, user_id))
+    cur = con.execute("SELECT id FROM vehicles WHERE license_plate = ?", (license_plate,))
     vehicle_row = cur.fetchone()
     if not vehicle_row:
         raise HTTPException(404, detail="Vehicle not found")
     vehicle_id = vehicle_row["id"]
+
+    # Verify this vehicle belongs to this user
+    cur = con.execute("SELECT id FROM user_vehicles WHERE user_id = ? AND vehicle_id = ?", (user_id, vehicle_id))
+    if not cur.fetchone():
+        raise HTTPException(403, detail="This vehicle does not belong to you")
 
     #find session
     cur = con.execute(
@@ -175,15 +198,22 @@ def stop_session(lid: str, data: Dict[str, Any] = Body(...), user = Depends(requ
     #stop session
     stopped = now_str()
     session_id = active_session["session_id"]
-    con.execute("UPDATE sessions SET stopped = ? WHERE session_id = ?", (stopped, session_id))
+
+    # Calculate duration in minutes
+    from datetime import datetime
+    started_dt = datetime.strptime(active_session["started"], "%d-%m-%Y %H:%M:%S")
+    stopped_dt = datetime.strptime(stopped, "%d-%m-%Y %H:%M:%S")
+    duration_minutes = int((stopped_dt - started_dt).total_seconds() / 60)
+
+    con.execute("UPDATE sessions SET stopped = ?, duration_minutes = ? WHERE session_id = ?", (stopped, duration_minutes, session_id))
     con.commit()
 
-    return {"message": f"Session stopped for: {license_plate}", "id": session_id}
+    return {"message": f"Session stopped for: {license_plate}", "id": session_id, "duration_minutes": duration_minutes}
 
 @router.get("/parking-lots/{lid}/sessions")
 def list_sessions(lid: str, user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
     #fetch user id
-    from Database.database_logic import get_user_id_by_username
+    from ...Database.database_logic import get_user_id_by_username
     user_id = get_user_id_by_username(con, user["username"])
 
     cur = con.execute("SELECT * FROM sessions WHERE parking_lot_id = ?", (lid,))
@@ -199,7 +229,7 @@ def list_sessions(lid: str, user = Depends(require_session), con: sqlite3.Connec
 @router.get("/parking-lots/{lid}/sessions/{sid}")
 def get_session_detail(lid: str, sid: str, user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
     #fetch user id
-    from Database.database_logic import get_user_id_by_username
+    from ...Database.database_logic import get_user_id_by_username
     user_id = get_user_id_by_username(con, user["username"])
 
     cur = con.execute("SELECT * FROM sessions WHERE parking_lot_id = ? AND session_id = ?", (lid, sid))

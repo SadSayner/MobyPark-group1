@@ -28,18 +28,15 @@ def create_reservation(payload: ReservationIn, user = Depends(require_session), 
     from ...Database.database_logic import get_user_id_by_username
     from datetime import datetime
 
-    # Get user ID
+    #Get user ID
     user_id = get_user_id_by_username(con, user.get("username"))
     if not user_id:
         raise HTTPException(400, detail="User not found")
 
-    # Check if parking lot exists
+    #Check if parking lot exists
     parkinglot = get_parking_lot_by_id(con, payload.parking_lot_id)
     if not parkinglot:
         raise HTTPException(404, detail="Parking lot not found")
-
-    # Check if vehicle exists (optional check)
-    # For now, we'll allow any vehicle_id
 
     created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 

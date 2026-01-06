@@ -2,7 +2,7 @@
 from fastapi import APIRouter, HTTPException, Depends, Header
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
-import hashlib, uuid
+import bcrypt, uuid, hashlib
 
 import sqlite3
 from ...storage_utils import load_json, save_user_data
@@ -21,8 +21,29 @@ from ..validation.validation import (
 
 router = APIRouter()
 
-def hasher(s: str) -> str:
-    return hashlib.md5(s.encode()).hexdigest()
+def hash_password(password: str) -> str:
+    """Hash a password using bcrypt with automatic salt generation"""
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
+    return hashed.decode('utf-8')
+
+def verify_password(password: str, hashed: str) -> bool:
+    """
+    Verify a password against a hash.
+    Supports both bcrypt (new) and MD5 (legacy) for backwards compatibility.
+    """
+    # Check if it's an MD5 hash (32 hex characters)
+    if len(hashed) == 32 and all(c in '0123456789abcdef' for c in hashed.lower()):
+        # Legacy MD5 hash - for backwards compatibility
+        md5_hash = hashlib.md5(password.encode()).hexdigest()
+        return md5_hash == hashed
+
+    # Modern bcrypt hash
+    try:
+        return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
+    except ValueError:
+        # Invalid hash format
+        return False
 
 class RegisterBody(BaseModel):
     username: str
@@ -75,7 +96,7 @@ def register(payload: RegisterBody, con: sqlite3.Connection = Depends(get_db)):
 
     con.execute(
         "INSERT INTO users (username, password, name, email, phone, role, created_at, birth_year, active) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 1990, 1)",
-        (payload.username, hasher(payload.password), payload.name, payload.email, payload.phone, (payload.role or "USER").upper()),
+        (payload.username, hash_password(payload.password), payload.name, payload.email, payload.phone, (payload.role or "USER").upper()),
     )
     con.commit()
     return {"message": "User created"}
@@ -87,7 +108,7 @@ def login(payload: LoginBody, con: sqlite3.Connection = Depends(get_db)):
 
     user = get_users_by_username(con, payload.username)
 
-    if user and user.password == hasher(payload.password):
+    if user and verify_password(payload.password, user.password):
         session_token = str(uuid.uuid4())
         add_session(session_token, {"id": user.id, "username": user.username, "name": user.name, "role": user.role})
         return {"message": "Login successful", "session_token": session_token}
@@ -132,7 +153,7 @@ def update_profile(updates: UpdateProfileIn, user = Depends(require_session), co
     if updates.name is not None:
         update_dict["name"] = updates.name
     if updates.password:
-        update_dict["password"] = hasher(updates.password)
+        update_dict["password"] = hash_password(updates.password)
     if updates.role and user.get("role") == "ADMIN":
         update_dict["role"] = updates.role
     if updates.email is not None:

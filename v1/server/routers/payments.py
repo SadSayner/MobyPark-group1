@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Union
 from datetime import datetime
 import sqlite3
 
@@ -15,7 +15,7 @@ router = APIRouter()
 class PaymentIn(BaseModel):
     transaction: Optional[str] = None
     amount: float = Field(..., gt=0)         # required and must be > 0
-    parkingsession_id: Optional[str] = None
+    parkingsession_id: Optional[Union[str, int]] = None
     session_id: Optional[int] = None  # Accept session_id from tests
     payment_method: Optional[str] = None  # Accept payment_method from tests
     t_data: Optional[Dict[str, Any]] = None

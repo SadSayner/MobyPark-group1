@@ -9,6 +9,6 @@ if __name__ == "__main__":
         "v1.server.app:app",
         host="localhost",
         port=8000,
-        reload=True,  # Auto-reload on code changes
+        reload=True,
         log_level="info"
     )
