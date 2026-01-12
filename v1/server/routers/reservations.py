@@ -107,7 +107,7 @@ def list_reservations(user=Depends(require_session), con: sqlite3.Connection = D
     user_id = get_user_id_by_username(con, user.get("username"))
     if not user_id:
         log_event(
-            level="WARNING",
+            level="ERROR",
             event="reservation_list_failed",
             reason="user_not_found",
         )
@@ -214,10 +214,20 @@ def update_reservation_route(rid: str, payload: UpdateReservationIn, user=Depend
         params.append(value)
 
     if updates:
-        params.append(rid)
-        sql = f"UPDATE reservations SET {', '.join(updates)} WHERE id = ?"
-        con.execute(sql, params)
-        con.commit()
+        try:
+            params.append(rid)
+            sql = f"UPDATE reservations SET {', '.join(updates)} WHERE id = ?"
+            con.execute(sql, params)
+            con.commit()
+        except Exception as e:
+            log_event(
+                level="ERROR",
+                event="reservation_update_failed",
+                reservation_id=rid,
+                reason="database_error",
+                error=str(e)
+            )
+            raise HTTPException(500, detail="Database update failed")
 
     log_event(
         level="INFO",
