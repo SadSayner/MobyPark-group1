@@ -246,7 +246,7 @@ def start_session(lid: str, data: Dict[str, Any] = Body(...), user=Depends(requi
 def stop_session(lid: str, data: Dict[str, Any] = Body(...), user=Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
     if "licenseplate" not in data:
         log_event(
-            level="INFO",
+            level="WARNING",
             event="parking_session_stop_attempt",
             username=user["username"],
             parking_lot_id=lid
@@ -372,7 +372,7 @@ def get_session_detail(lid: str, sid: str, user=Depends(require_session), con: s
 @router.delete("/parking-lots/{lid}/sessions/{sid}")
 def delete_session(lid: str, sid: str, admin=Depends(require_admin), con: sqlite3.Connection = Depends(get_db)):
     log_event(
-        level="WARNING",
+        level="INFO",
         event="parking_session_delete_attempt",
         admin=admin["username"],
         parking_lot_id=lid,
