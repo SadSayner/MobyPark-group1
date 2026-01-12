@@ -164,7 +164,7 @@ def update_profile(updates: UpdateProfileIn, user=Depends(require_session), con:
 
     if updates.password is not None:
         if not is_valid_password(updates.password):
-            log_event(level="ERROR", event="profile_update_failed",
+            log_event(level="WARNING", event="profile_update_failed",
                       username=user["username"], reason="invalid_password")
             raise HTTPException(
                 status_code=400,
@@ -225,5 +225,5 @@ def logout(authorization: Optional[str] = Header(default=None)):
         remove_session(authorization)
         return {"message": "User logged out"}
 
-    log_event(level="ERROR", event="logout_failed", reason="invalid_session")
+    log_event(level="WARNING", event="logout_failed", reason="invalid_session")
     raise HTTPException(400, detail="Invalid session token")
