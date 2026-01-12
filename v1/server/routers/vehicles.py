@@ -59,7 +59,7 @@ def create_vehicle(payload: VehicleIn, user=Depends(require_session), con: sqlit
 
     if exists:
         log_event(
-            "ERROR",
+            "WARNING",
             event="vehicle_create_failed",
             username=user.get("username"),
             reason="vehicle_exists",
@@ -123,7 +123,7 @@ def update_vehicle_route(lid: str, payload: UpdateVehicleIn, user=Depends(requir
     ).fetchone()
 
     if not row:
-        log_event("ERROR", event="vehicle_update_failed",
+        log_event("WARNING", event="vehicle_update_failed",
                   reason="vehicle_not_found", vehicle_id=lid)
         raise HTTPException(404, detail="Vehicle not found")
 
@@ -176,7 +176,7 @@ def delete_vehicle_route(lid: str, user=Depends(require_session), con: sqlite3.C
     ).fetchone()
 
     if not row:
-        log_event("ERROR", event="vehicle_delete_failed",
+        log_event("WARNING", event="vehicle_delete_failed",
                   reason="vehicle_not_found", vehicle_id=lid)
         raise HTTPException(404, detail="Vehicle not found")
 
@@ -221,7 +221,7 @@ def list_user_vehicles(user_name: str, admin=Depends(require_admin), con: sqlite
 
     uid = get_user_id_by_username(con, user_name)
     if not uid:
-        log_event("ERROR", event="vehicle_list_admin_failed",
+        log_event("WARNING", event="vehicle_list_admin_failed",
                   reason="user_not_found", target_user=user_name)
         raise HTTPException(404, detail="User not found")
 
