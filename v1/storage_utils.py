@@ -4,7 +4,7 @@ import csv
 import json
 import os
 import datetime
-from Database.database_logic import *
+from v1.Database.database_logic import *
 from Models.Session_data_model import Session_data
 from Models.parkinglots_model import Parking_lots_model
 from Models.reservations_model import Reservations_model
@@ -88,7 +88,6 @@ def load_data(filename):
 # Get the directory where this file is located
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 _DATA_DIR = os.path.join(_BASE_DIR, "data")
-
 
 
 def _get_data_path(filename):

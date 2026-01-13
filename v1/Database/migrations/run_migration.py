@@ -70,7 +70,7 @@ def run_migration():
             )
 
         conn.commit()
-        print("✅ Bedrijven aangemaakt en user_vehicles geüpdatet.")
+        print("Bedrijven aangemaakt en user_vehicles geüpdatet.")
 
 
 if __name__ == "__main__":
