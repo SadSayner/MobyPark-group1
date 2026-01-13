@@ -1242,26 +1242,26 @@ def fill_database():
 
     conn = get_connection()
 
-    # parking_lots = load_data("v1/data/parking-lots.json")
-    # print("lots:", insert_parking_lots(conn, parking_lots, debug=True))
+    parking_lots = load_data("v1/data/parking-lots.json")
+    print("lots:", insert_parking_lots(conn, parking_lots, debug=True))
 
-    # users = load_data("v1/data/users.json")
-    # print("users:", insert_users(conn, users, debug=True))
+    users = load_data("v1/data/users.json")
+    print("users:", insert_users(conn, users, debug=True))
 
-    # vehicles = load_data("v1/data/vehicles.json")
-    # print("vehicles:", insert_vehicles(conn, vehicles, debug=True))
+    vehicles = load_data("v1/data/vehicles.json")
+    print("vehicles:", insert_vehicles(conn, vehicles, debug=True))
 
-    # reservations = load_data("v1/data/reservations.json")
-    # print(
-    #     "reservations:",
-    #     insert_reservations(conn, reservations, users_source=users, debug=True),
-    # )
+    reservations = load_data("v1/data/reservations.json")
+    print(
+        "reservations:",
+        insert_reservations(conn, reservations, users_source=users, debug=True),
+    )
 
-    # all_sessions = load_parking_sessions(True)
-    # batches = make_batches(all_sessions, 400000)
-    # for batch in batches:
-    #     result = insert_parking_sessions(conn, batch, debug=True)
-    #     print(f"In batch: inserted={result['inserted']}, failed={result['failed']}")
+    all_sessions = load_parking_sessions(True)
+    batches = make_batches(all_sessions, 400000)
+    for batch in batches:
+        result = insert_parking_sessions(conn, batch, debug=True)
+        print(f"In batch: inserted={result['inserted']}, failed={result['failed']}")
 
     payments = load_data("v1/data/payments.json")
     batches = make_batches(payments, 400000)

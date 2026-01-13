@@ -6,14 +6,13 @@ DB_PATH = Path("v1/Database/MobyPark.db")
 
 def run_migration():
     if not DB_PATH.exists():
-        print("❌ Database bestaat niet:", DB_PATH)
+        print(" Database bestaat niet:", DB_PATH)
         return
 
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("PRAGMA foreign_keys = ON;")
         cur = conn.cursor()
 
-        # 1️⃣ Vul user_vehicles vanuit reservations
         cur.execute(
             """
             SELECT DISTINCT user_id, vehicle_id
@@ -33,7 +32,6 @@ def run_migration():
             added += cur.rowcount
         print(f"✅ {added} records toegevoegd aan user_vehicles.")
 
-        # 2️⃣ Maak bedrijven aan voor gebruikers met >1 voertuig
         cur.execute(
             """
             SELECT user_id
@@ -43,11 +41,10 @@ def run_migration():
         """
         )
         multi_vehicle_users = [row[0] for row in cur.fetchall()]
-        print(f"ℹ️ Gebruikers met meerdere voertuigen: {multi_vehicle_users}")
+        print(f"Gebruikers met meerdere voertuigen: {multi_vehicle_users}")
 
         for user_id in multi_vehicle_users:
-            # Controleer of bedrijf al bestaat
-            company_name = f"Bedrijf van gebruiker {user_id}"
+            company_name = f"{user_id}'s Company"
             cur.execute(
                 "SELECT company_id FROM companies WHERE name = ?", (company_name,)
             )
@@ -55,7 +52,6 @@ def run_migration():
             if row:
                 company_id = row[0]
             else:
-                # Voeg bedrijf toe
                 cur.execute(
                     """
                     INSERT INTO companies (name, created_at)
@@ -64,7 +60,6 @@ def run_migration():
                     (company_name,),
                 )
                 company_id = cur.lastrowid
-            # Update company_id in user_vehicles
             cur.execute(
                 """
                 UPDATE user_vehicles
