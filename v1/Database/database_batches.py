@@ -18,9 +18,9 @@ from datetime import datetime, timezone
 import sys
 import os
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from ..storage_utils import *  # noqa
-from .database_creation import create_database  # noqa
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from storage_utils import *  # noqa
+from database_creation import create_database  # noqa
 
 Row = Dict[str, Any]
 Rows = Iterable[Row]
