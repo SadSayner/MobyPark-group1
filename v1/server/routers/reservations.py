@@ -1,11 +1,56 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query, Response
 from pydantic import BaseModel
 from typing import Optional
 from ..deps import require_session, require_admin
-from ...Database.database_logic import get_db, get_parking_lot_by_id, update_reservation, delete_reservation
+from ...Database.database_logic import get_db, get_parking_lot_by_id, update_reservation, delete_reservation, get_user_id_by_username
+import csv
+import io
 import sqlite3
+from datetime import datetime
 
 router = APIRouter()
+
+@router.get("/reservations/monthly_overview", summary="Get monthly parking overview as CSV", tags=["reservations"])
+def monthly_overview(
+    month: int = Query(..., ge=1, le=12, description="Month number (1-12)"),
+    year: int = Query(None, description="Year (defaults to current year)"),
+    user = Depends(require_session),
+    con: sqlite3.Connection = Depends(get_db)
+):
+    """
+    Returns a CSV table of all parking actions (including free) for the given month and year, with a total cost.
+    """
+    if year is None:
+        year = datetime.now().year
+    user_id = get_user_id_by_username(con, user.get("username"))
+    if not user_id:
+        raise HTTPException(400, detail="User not found")
+    # Get all reservations for user
+    rows = con.execute(
+        "SELECT * FROM reservations WHERE user_id = ? AND strftime('%m', start_time) = ? AND strftime('%Y', start_time) = ? ORDER BY start_time ASC",
+        (user_id, f"{month:02d}", str(year))
+    ).fetchall()
+    # Get costs for each reservation (if available)
+    # If cost is not present, treat as 0 (free)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["id", "parking_lot_id", "vehicle_id", "start_time", "duration", "status", "cost"])
+    total = 0.0
+    for row in rows:
+        cost = row["cost"] if "cost" in row.keys() and row["cost"] is not None else 0.0
+        try:
+            cost = float(cost)
+        except Exception:
+            cost = 0.0
+        total += cost
+        writer.writerow([
+            row["id"], row["parking_lot_id"], row["vehicle_id"], row["start_time"], row["duration"], row["status"], cost
+        ])
+    writer.writerow([])
+    writer.writerow(["Totaal", "", "", "", "", "", total])
+    csv_data = output.getvalue()
+    output.close()
+    return Response(content=csv_data, media_type="text/csv")
 
 
 class ReservationIn(BaseModel):
