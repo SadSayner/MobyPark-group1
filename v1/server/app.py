@@ -1,9 +1,10 @@
-
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 import os
+from v1.server.logging_config import log_event
+import time
 
 from .routers import auth, parking_lots, reservations, vehicles, payments
 
@@ -37,6 +38,46 @@ app = FastAPI(
     },
 )
 
+
+@app.middleware("http")
+async def elastic_request_logger(request: Request, call_next):
+    start = time.time()
+
+    try:
+        response = await call_next(request)
+        return response
+    finally:
+        duration = round((time.time() - start) * 1000, 2)
+
+        if getattr(response, "status_code", None) == 500:
+            log_event(
+                level="ERROR",
+                event="http_request",
+                method=request.method,
+                path=request.url.path,
+                status_code=getattr(response, "status_code", None),
+                response_time_ms=duration,
+                exc_info=True,
+            )
+        elif getattr(response, "status_code", None) != 200:
+            log_event(
+                level="ERROR",
+                event="http_request",
+                method=request.method,
+                path=request.url.path,
+                status_code=getattr(response, "status_code", None),
+                response_time_ms=duration,
+            )
+        else:
+            log_event(
+                level="INFO",
+                event="http_request",
+                method=request.method,
+                path=request.url.path,
+                status_code=getattr(response, "status_code", None),
+                response_time_ms=duration,
+            )
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -57,13 +98,16 @@ static_path = os.path.join(os.path.dirname(__file__), "static")
 if os.path.exists(static_path):
     app.mount("/static", StaticFiles(directory=static_path), name="static")
 
+
 @app.get("/")
 def root():
     """Serve the simple testing interface"""
-    static_file = os.path.join(os.path.dirname(__file__), "static", "index.html")
+    static_file = os.path.join(os.path.dirname(
+        __file__), "static", "index.html")
     if os.path.exists(static_file):
         return FileResponse(static_file)
     return {"message": "API is running. Visit /docs for API documentation."}
+
 
 @app.get("/health")
 def health():
