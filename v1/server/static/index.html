@@ -261,11 +261,7 @@
                 </div>
                 <div class="form-group">
                     <label>Phone</label>
-                    <input type="text" id="reg_phone" placeholder="1234567890">
-                </div>
-                <div class="form-group">
-                    <label>Birth Year</label>
-                    <input type="number" id="reg_birth_year" placeholder="1990">
+                    <input type="text" id="reg_phone" placeholder="0612345678">
                 </div>
                 <button class="btn btn-primary" onclick="register()">Register</button>
 
@@ -305,6 +301,38 @@
                 </div>
                 <button class="btn btn-primary" onclick="getParkingLot()">Get Parking Lot</button>
 
+                <hr style="margin: 30px 0; border: none; border-top: 2px solid #eee;">
+
+                <h3>Start Parking Session</h3>
+                <div class="info-box">
+                    <strong>ℹ️ Info:</strong> Start a parking session at a specific parking lot. You must be logged in.
+                </div>
+                <div class="form-group">
+                    <label>Parking Lot ID</label>
+                    <input type="number" id="start_session_lot_id" placeholder="1">
+                </div>
+                <div class="form-group">
+                    <label>License Plate</label>
+                    <input type="text" id="start_session_plate" placeholder="ABC-123">
+                </div>
+                <button class="btn btn-primary" onclick="startParkingSession()">Start Session</button>
+
+                <hr style="margin: 30px 0; border: none; border-top: 2px solid #eee;">
+
+                <h3>Stop Parking Session</h3>
+                <div class="info-box">
+                    <strong>ℹ️ Info:</strong> Stop an active parking session. You must be logged in.
+                </div>
+                <div class="form-group">
+                    <label>Parking Lot ID</label>
+                    <input type="number" id="stop_session_lot_id" placeholder="1">
+                </div>
+                <div class="form-group">
+                    <label>License Plate</label>
+                    <input type="text" id="stop_session_plate" placeholder="ABC-123">
+                </div>
+                <button class="btn btn-primary" onclick="stopParkingSession()">Stop Session</button>
+
                 <div id="parkingResponse"></div>
             </div>
 
@@ -327,8 +355,8 @@
                     <input type="text" id="vehicle_plate" placeholder="ABC-123">
                 </div>
                 <div class="form-group">
-                    <label>Make</label>
-                    <input type="text" id="vehicle_make" placeholder="Toyota">
+                    <label>Brand</label>
+                    <input type="text" id="vehicle_brand" placeholder="Toyota">
                 </div>
                 <div class="form-group">
                     <label>Model</label>
@@ -358,18 +386,40 @@
                     <button class="btn btn-primary" onclick="getReservations()">Get My Reservations</button>
                 </div>
 
+                <hr style="margin: 30px 0; border: none; border-top: 2px solid #eee;">
+
+                <h3>Create New Reservation</h3>
+                <div class="form-group">
+                    <label>Parking Lot ID</label>
+                    <input type="number" id="res_parking_lot_id" placeholder="1">
+                </div>
+                <div class="form-group">
+                    <label>Vehicle ID</label>
+                    <input type="number" id="res_vehicle_id" placeholder="1">
+                </div>
+                <div class="form-group">
+                    <label>Start Time (e.g., 2026-01-07 14:00:00)</label>
+                    <input type="text" id="res_start_time" placeholder="2026-01-07 14:00:00">
+                </div>
+                <div class="form-group">
+                    <label>Duration (minutes)</label>
+                    <input type="number" id="res_duration" placeholder="120">
+                </div>
+                <button class="btn btn-primary" onclick="createReservation()">Create Reservation</button>
+
                 <div id="reservationsResponse"></div>
             </div>
 
             <!-- Payments Tab -->
             <div id="payments" class="tab-content">
-                <h2>Payments</h2>
+                <h2>Payments & Billing</h2>
                 <div class="info-box">
-                    <strong>ℹ️ Info:</strong> View your payment history.
+                    <strong>ℹ️ Info:</strong> View your billing and make payments for parking sessions.
                 </div>
 
                 <div class="button-group">
-                    <button class="btn btn-primary" onclick="getPayments()">Get My Payments</button>
+                    <button class="btn btn-primary" onclick="getBilling()">Get My Billing</button>
+                    <button class="btn btn-secondary" onclick="getPayments()">View Payment History</button>
                 </div>
 
                 <div id="paymentsResponse"></div>
@@ -431,8 +481,7 @@
                 password: document.getElementById('reg_password').value,
                 email: document.getElementById('reg_email').value,
                 name: document.getElementById('reg_name').value,
-                phone: document.getElementById('reg_phone').value,
-                birth_year: parseInt(document.getElementById('reg_birth_year').value)
+                phone: document.getElementById('reg_phone').value
             };
 
             try {
@@ -509,6 +558,68 @@
             try {
                 const response = await fetch(`${API_BASE}/parking-lots/${id}`, {
                     headers: token ? { 'authorization': token } : {}
+                });
+
+                const result = await response.json();
+                showResponse('parkingResponse', result, !response.ok);
+            } catch (error) {
+                showResponse('parkingResponse', { error: error.message }, true);
+            }
+        }
+
+        async function startParkingSession() {
+            if (!token) {
+                showResponse('parkingResponse', { error: 'Please login first' }, true);
+                return;
+            }
+
+            const lotId = document.getElementById('start_session_lot_id').value;
+            const licensePlate = document.getElementById('start_session_plate').value;
+
+            if (!lotId || !licensePlate) {
+                showResponse('parkingResponse', { error: 'Please fill in all fields' }, true);
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/parking-lots/${lotId}/sessions/start`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'authorization': token
+                    },
+                    body: JSON.stringify({ licenseplate: licensePlate })
+                });
+
+                const result = await response.json();
+                showResponse('parkingResponse', result, !response.ok);
+            } catch (error) {
+                showResponse('parkingResponse', { error: error.message }, true);
+            }
+        }
+
+        async function stopParkingSession() {
+            if (!token) {
+                showResponse('parkingResponse', { error: 'Please login first' }, true);
+                return;
+            }
+
+            const lotId = document.getElementById('stop_session_lot_id').value;
+            const licensePlate = document.getElementById('stop_session_plate').value;
+
+            if (!lotId || !licensePlate) {
+                showResponse('parkingResponse', { error: 'Please fill in all fields' }, true);
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/parking-lots/${lotId}/sessions/stop`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'authorization': token
+                    },
+                    body: JSON.stringify({ licenseplate: licensePlate })
                 });
 
                 const result = await response.json();
@@ -598,6 +709,145 @@
 
                 const result = await response.json();
                 showResponse('paymentsResponse', result, !response.ok);
+            } catch (error) {
+                showResponse('paymentsResponse', { error: error.message }, true);
+            }
+        }
+
+        async function createReservation() {
+            if (!token) {
+                showResponse('reservationsResponse', { error: 'Please login first' }, true);
+                return;
+            }
+
+            const data = {
+                parking_lot_id: parseInt(document.getElementById('res_parking_lot_id').value),
+                vehicle_id: parseInt(document.getElementById('res_vehicle_id').value),
+                start_time: document.getElementById('res_start_time').value,
+                duration: parseInt(document.getElementById('res_duration').value)
+            };
+
+            if (!data.parking_lot_id || !data.vehicle_id || !data.start_time || !data.duration) {
+                showResponse('reservationsResponse', { error: 'Please fill in all fields' }, true);
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/reservations`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'authorization': token
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+                showResponse('reservationsResponse', result, !response.ok);
+            } catch (error) {
+                showResponse('reservationsResponse', { error: error.message }, true);
+            }
+        }
+
+        async function getBilling() {
+            if (!token) {
+                showResponse('paymentsResponse', { error: 'Please login first' }, true);
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/billing`, {
+                    headers: { 'authorization': token }
+                });
+
+                const result = await response.json();
+
+                if (response.ok && Array.isArray(result)) {
+                    // Store billing data globally for payment function
+                    window.billingData = result;
+
+                    // Format billing data with pay buttons
+                    let html = '<div style="margin-top: 20px;">';
+
+                    if (result.length === 0) {
+                        html += '<p>No billing information available.</p>';
+                    } else {
+                        result.forEach((bill, index) => {
+                            const balance = bill.balance || 0;
+                            const isPaid = balance <= 0;
+
+                            html += `
+                                <div style="border: 1px solid #ddd; padding: 15px; margin-bottom: 15px; border-radius: 5px; background: ${isPaid ? '#f0f9ff' : '#fff'};">
+                                    <h4 style="margin-top: 0;">Session #${index + 1}</h4>
+                                    <p><strong>License Plate:</strong> ${bill.session?.licenseplate || 'N/A'}</p>
+                                    <p><strong>Parking:</strong> ${bill.parking?.name || 'N/A'} - ${bill.parking?.location || 'N/A'}</p>
+                                    <p><strong>Started:</strong> ${bill.session?.started || 'N/A'}</p>
+                                    <p><strong>Stopped:</strong> ${bill.session?.stopped || 'Still active'}</p>
+                                    <p><strong>Duration:</strong> ${bill.session?.hours || 0} hours, ${bill.session?.days || 0} days</p>
+                                    <p><strong>Total Amount:</strong> €${bill.amount?.toFixed(2) || '0.00'}</p>
+                                    <p><strong>Paid:</strong> €${bill.payed?.toFixed(2) || '0.00'}</p>
+                                    <p style="font-size: 18px; font-weight: bold; color: ${isPaid ? 'green' : 'red'};">
+                                        <strong>Balance:</strong> €${balance.toFixed(2)}
+                                    </p>
+                                    ${!isPaid ? `<button class="btn btn-primary" onclick="payBill(${index})">Pay €${balance.toFixed(2)}</button>` : '<span style="color: green; font-weight: bold;">✓ Paid</span>'}
+                                </div>
+                            `;
+                        });
+                    }
+
+                    html += '</div>';
+                    document.getElementById('paymentsResponse').innerHTML = html;
+                } else {
+                    showResponse('paymentsResponse', result, true);
+                }
+            } catch (error) {
+                showResponse('paymentsResponse', { error: error.message }, true);
+            }
+        }
+
+        async function payBill(billIndex) {
+            if (!token) {
+                showResponse('paymentsResponse', { error: 'Please login first' }, true);
+                return;
+            }
+
+            if (!window.billingData || !window.billingData[billIndex]) {
+                showResponse('paymentsResponse', { error: 'Billing data not found' }, true);
+                return;
+            }
+
+            const bill = window.billingData[billIndex];
+            const amount = bill.balance || 0;
+
+            if (!confirm(`Are you sure you want to pay €${amount.toFixed(2)}?`)) {
+                return;
+            }
+
+            // Note: We need the actual session_id from the backend
+            // The billing endpoint doesn't return session_id currently
+            // For now, we'll pass the balance amount
+            try {
+                const response = await fetch(`${API_BASE}/payments`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'authorization': token
+                    },
+                    body: JSON.stringify({
+                        amount: amount,
+                        parkingsession_id: String(billIndex + 1)  // Convert to string
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    alert('Payment successful!');
+                    // Refresh billing to show updated status
+                    getBilling();
+                } else {
+                    showResponse('paymentsResponse', result, true);
+                }
             } catch (error) {
                 showResponse('paymentsResponse', { error: error.message }, true);
             }

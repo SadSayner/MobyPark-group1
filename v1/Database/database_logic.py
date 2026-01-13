@@ -5,10 +5,10 @@ import os
 import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from ..Models.parkinglots_model import Parking_lots_model  # noqa
-from ..Models.user_model import User_model  # noqa
-from ..Models.vehicle_model import Vehicle_model  # noqa
-from ..Models.reservations_model import Reservations_model  # noqa
+from Models.parkinglots_model import Parking_lots_model  # noqa
+from Models.user_model import User_model  # noqa
+from Models.vehicle_model import Vehicle_model  # noqa
+from Models.reservations_model import Reservations_model  # noqa
 
 _VALID_PAYMENT_STATUSES = {"unpaid", "pending", "paid", "failed"}
 _VALID_STATUSES = {"pending", "confirmed", "cancelled"}
@@ -31,6 +31,7 @@ def get_connection(db_path: str = None) -> sqlite3.Connection:
     con.execute("PRAGMA foreign_keys = ON;")
     return con
 
+
 def get_db():
     con = get_connection()
     try:
@@ -40,6 +41,7 @@ def get_db():
             con.close()
         except Exception:
             pass
+
 
 def record_exists(con: sqlite3.Connection, table: str, where: dict) -> bool:
     """
@@ -530,14 +532,19 @@ def insert_parking_session(con: sqlite3.Connection, session_obj) -> int:
     try:
         lot_id = int(session_obj.parking_lot_id)
         user_id = int(session_obj.user_id)
-        vehicle_id = None if not hasattr(session_obj, 'vehicle_id') or session_obj.vehicle_id in (None, "") else int(session_obj.vehicle_id)
-        duration = None if not hasattr(session_obj, 'duration_minutes') or session_obj.duration_minutes in (None, "") else int(session_obj.duration_minutes)
+        vehicle_id = None if not hasattr(session_obj, 'vehicle_id') or session_obj.vehicle_id in (
+            None, "") else int(session_obj.vehicle_id)
+        duration = None if not hasattr(session_obj, 'duration_minutes') or session_obj.duration_minutes in (
+            None, "") else int(session_obj.duration_minutes)
     except (TypeError, ValueError):
-        raise ValueError("parking_lot_id, user_id, vehicle_id, and duration_minutes must be numeric when provided.")
+        raise ValueError(
+            "parking_lot_id, user_id, vehicle_id, and duration_minutes must be numeric when provided.")
 
-    payment_status = getattr(session_obj, 'payment_status', 'unpaid') or "unpaid"
+    payment_status = getattr(
+        session_obj, 'payment_status', 'unpaid') or "unpaid"
     if payment_status and payment_status.lower() not in _VALID_PAYMENT_STATUSES:
-        raise ValueError(f"payment_status must be one of {_VALID_PAYMENT_STATUSES}, got '{payment_status}'.")
+        raise ValueError(
+            f"payment_status must be one of {_VALID_PAYMENT_STATUSES}, got '{payment_status}'.")
 
     if duration is not None and duration < 0:
         raise ValueError("duration_minutes cannot be negative.")
@@ -950,13 +957,16 @@ def update_user(con: sqlite3.Connection, username: str, updates: dict) -> bool:
         return False
 
     # Build dynamic UPDATE statement
-    allowed_fields = ["name", "password", "email", "phone", "role", "birth_year", "active"]
-    fields_to_update = {k: v for k, v in updates.items() if k in allowed_fields and v is not None}
+    allowed_fields = ["name", "password", "email",
+                      "phone", "role", "birth_year", "active"]
+    fields_to_update = {k: v for k, v in updates.items(
+    ) if k in allowed_fields and v is not None}
 
     if not fields_to_update:
         return True  # No valid fields to update
 
-    set_clause = ", ".join([f"{field} = ?" for field in fields_to_update.keys()])
+    set_clause = ", ".join(
+        [f"{field} = ?" for field in fields_to_update.keys()])
     sql = f"UPDATE users SET {set_clause} WHERE username = ?"
 
     values = list(fields_to_update.values()) + [username]
@@ -987,13 +997,16 @@ def update_parking_lot(con: sqlite3.Connection, lot_id: int, updates: dict) -> b
         return False
 
     # Build dynamic UPDATE statement
-    allowed_fields = ["name", "location", "address", "capacity", "reserved", "tariff", "daytariff", "lat", "lng"]
-    fields_to_update = {k: v for k, v in updates.items() if k in allowed_fields and v is not None}
+    allowed_fields = ["name", "location", "address", "capacity",
+                      "reserved", "tariff", "daytariff", "lat", "lng"]
+    fields_to_update = {k: v for k, v in updates.items(
+    ) if k in allowed_fields and v is not None}
 
     if not fields_to_update:
         return True
 
-    set_clause = ", ".join([f"{field} = ?" for field in fields_to_update.keys()])
+    set_clause = ", ".join(
+        [f"{field} = ?" for field in fields_to_update.keys()])
     sql = f"UPDATE parking_lots SET {set_clause} WHERE id = ?"
 
     values = list(fields_to_update.values()) + [lot_id]
@@ -1024,13 +1037,16 @@ def update_vehicle(con: sqlite3.Connection, vehicle_id: int, updates: dict) -> b
         return False
 
     # Build dynamic UPDATE statement
-    allowed_fields = ["license_plate", "make", "model", "color", "year", "name", "updated_at"]
-    fields_to_update = {k: v for k, v in updates.items() if k in allowed_fields and v is not None}
+    allowed_fields = ["license_plate", "make",
+                      "model", "color", "year", "name", "updated_at"]
+    fields_to_update = {k: v for k, v in updates.items(
+    ) if k in allowed_fields and v is not None}
 
     if not fields_to_update:
         return True
 
-    set_clause = ", ".join([f"{field} = ?" for field in fields_to_update.keys()])
+    set_clause = ", ".join(
+        [f"{field} = ?" for field in fields_to_update.keys()])
     sql = f"UPDATE vehicles SET {set_clause} WHERE id = ?"
 
     values = list(fields_to_update.values()) + [vehicle_id]
@@ -1056,18 +1072,22 @@ def update_reservation(con: sqlite3.Connection, reservation_id: int, updates: di
     con.execute("PRAGMA foreign_keys = ON;")
 
     # Check if reservation exists
-    cur = con.execute("SELECT 1 FROM reservations WHERE id = ?", (reservation_id,))
+    cur = con.execute(
+        "SELECT 1 FROM reservations WHERE id = ?", (reservation_id,))
     if not cur.fetchone():
         return False
 
     # Build dynamic UPDATE statement
-    allowed_fields = ["user_id", "parking_lot_id", "vehicle_id", "start_time", "duration", "status", "licenseplate", "startdate", "enddate", "parkinglot", "user"]
-    fields_to_update = {k: v for k, v in updates.items() if k in allowed_fields and v is not None}
+    allowed_fields = ["user_id", "parking_lot_id", "vehicle_id", "start_time",
+                      "duration", "status", "licenseplate", "startdate", "enddate", "parkinglot", "user"]
+    fields_to_update = {k: v for k, v in updates.items(
+    ) if k in allowed_fields and v is not None}
 
     if not fields_to_update:
         return True
 
-    set_clause = ", ".join([f"{field} = ?" for field in fields_to_update.keys()])
+    set_clause = ", ".join(
+        [f"{field} = ?" for field in fields_to_update.keys()])
     sql = f"UPDATE reservations SET {set_clause} WHERE id = ?"
 
     values = list(fields_to_update.values()) + [reservation_id]
@@ -1093,18 +1113,22 @@ def update_payment(con: sqlite3.Connection, transaction_id: str, updates: dict) 
     con.execute("PRAGMA foreign_keys = ON;")
 
     # Check if payment exists
-    cur = con.execute("SELECT 1 FROM payments WHERE transaction_id = ?", (transaction_id,))
+    cur = con.execute(
+        "SELECT 1 FROM payments WHERE transaction_id = ?", (transaction_id,))
     if not cur.fetchone():
         return False
 
     # Build dynamic UPDATE statement
-    allowed_fields = ["amount", "completed", "t_date", "t_method", "t_issuer", "t_bank", "t_amount"]
-    fields_to_update = {k: v for k, v in updates.items() if k in allowed_fields and v is not None}
+    allowed_fields = ["amount", "completed", "t_date",
+                      "t_method", "t_issuer", "t_bank", "t_amount"]
+    fields_to_update = {k: v for k, v in updates.items(
+    ) if k in allowed_fields and v is not None}
 
     if not fields_to_update:
         return True
 
-    set_clause = ", ".join([f"{field} = ?" for field in fields_to_update.keys()])
+    set_clause = ", ".join(
+        [f"{field} = ?" for field in fields_to_update.keys()])
     sql = f"UPDATE payments SET {set_clause} WHERE transaction_id = ?"
 
     values = list(fields_to_update.values()) + [transaction_id]
@@ -1130,18 +1154,22 @@ def update_session(con: sqlite3.Connection, session_id: int, updates: dict) -> b
     con.execute("PRAGMA foreign_keys = ON;")
 
     # Check if session exists
-    cur = con.execute("SELECT 1 FROM sessions WHERE session_id = ?", (session_id,))
+    cur = con.execute(
+        "SELECT 1 FROM sessions WHERE session_id = ?", (session_id,))
     if not cur.fetchone():
         return False
 
     # Build dynamic UPDATE statement
-    allowed_fields = ["parking_lot_id", "user_id", "started", "duration_minutes", "payment_status", "stopped"]
-    fields_to_update = {k: v for k, v in updates.items() if k in allowed_fields and v is not None}
+    allowed_fields = ["parking_lot_id", "user_id", "started",
+                      "duration_minutes", "payment_status", "stopped"]
+    fields_to_update = {k: v for k, v in updates.items(
+    ) if k in allowed_fields and v is not None}
 
     if not fields_to_update:
         return True
 
-    set_clause = ", ".join([f"{field} = ?" for field in fields_to_update.keys()])
+    set_clause = ", ".join(
+        [f"{field} = ?" for field in fields_to_update.keys()])
     sql = f"UPDATE sessions SET {set_clause} WHERE session_id = ?"
 
     values = list(fields_to_update.values()) + [session_id]
@@ -1213,7 +1241,8 @@ def delete_reservation(con: sqlite3.Connection, reservation_id: int) -> bool:
     """
     con.execute("PRAGMA foreign_keys = ON;")
 
-    cur = con.execute("SELECT 1 FROM reservations WHERE id = ?", (reservation_id,))
+    cur = con.execute(
+        "SELECT 1 FROM reservations WHERE id = ?", (reservation_id,))
     if not cur.fetchone():
         return False
 
@@ -1236,7 +1265,8 @@ def delete_session(con: sqlite3.Connection, session_id: int) -> bool:
     """
     con.execute("PRAGMA foreign_keys = ON;")
 
-    cur = con.execute("SELECT 1 FROM sessions WHERE session_id = ?", (session_id,))
+    cur = con.execute(
+        "SELECT 1 FROM sessions WHERE session_id = ?", (session_id,))
     if not cur.fetchone():
         return False
 

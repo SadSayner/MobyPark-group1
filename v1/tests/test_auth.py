@@ -8,7 +8,7 @@ class TestAuthentication:
         """Test user registration"""
         rand_id = random.randint(100000, 999999)
         response = test_client.post("/auth/register", json={
-            "username": f"new{rand_id}",  # 9 chars, unique
+            "username": f"new{rand_id}",  #9 chars, unique
             "password": "Password123!",
             "name": "New User",
             "email": f"new{rand_id}@example.com",
@@ -164,8 +164,8 @@ class TestAuthentication:
             "email": f"test_{rand_id}@example.com",
             "phone": "1234567890"
         })
-        # Should reject - max 10 characters
-        assert response.status_code in [400, 422]
+        #should fail, 10 is the max. 
+        assert response.status_code in [400, 422] #bad request, unprocessable Entity
 
     @pytest.mark.xfail(reason="API doesn't handle duplicate email gracefully - returns uncaught IntegrityError", strict=True)
     def test_register_duplicate_email(self, test_client):

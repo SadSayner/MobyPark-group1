@@ -8,7 +8,35 @@ import time
 
 from .routers import auth, parking_lots, reservations, vehicles, payments
 
-app = FastAPI(title="Parking API")
+# API Metadata for Swagger UI
+app = FastAPI(
+    title="MobyPark API",
+    description="""
+    **MobyPark Parking Management System API**
+
+    This API provides endpoints for:
+    * **Authentication** - User registration, login, profile management
+    * **Parking Lots** - CRUD operations for parking lots and parking sessions
+    * **Vehicles** - Manage user vehicles
+    * **Reservations** - Create and manage parking reservations
+    * **Payments** - Handle payments and billing
+
+    ## Authentication
+    Most endpoints require authentication via session token in the `Authorization` header.
+
+    ## Roles
+    * **USER** - Regular user (can manage own data)
+    * **ADMIN** - Administrator (can manage all data)
+    """,
+    version="1.0.0",
+    contact={
+        "name": "MobyPark Team",
+        "email": "support@mobypark.com",
+    },
+    license_info={
+        "name": "MIT",
+    },
+)
 
 
 @app.middleware("http")
