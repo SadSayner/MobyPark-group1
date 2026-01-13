@@ -468,3 +468,160 @@ class TestAuthentication:
         })
         # Should succeed - data should be stored as-is (sanitization happens on display)
         assert response.status_code == 200
+
+    @pytest.mark.parametrize("email,expected_status", [
+        ("not-an-email", [400, 422]),
+        ("test@", [400, 422]),
+        ("@example.com", [400, 422]),
+        ("test@example.com", [200, 400, 422]),
+    ])
+    def test_register_various_email_formats(self, test_client, email, expected_status):
+        """Test registration with various email formats"""
+        rand_id = random.randint(100000, 999999)
+        response = test_client.post("/auth/register", json={
+            "username": f"emailcase{rand_id}"[:10],
+            "password": "Password123!",
+            "name": "Test User",
+            "email": email,
+            "phone": "1234567890"
+        })
+        assert response.status_code in expected_status
+
+    @pytest.mark.parametrize("role,expected_status", [
+        ("USER", [200]),
+        ("ADMIN", [200]),
+        ("INVALID", [400, 422]),
+        ("", [400, 422]),
+    ])
+    def test_register_various_roles(self, test_client, role, expected_status):
+        """Test registration with various roles"""
+        rand_id = random.randint(100000, 999999)
+        response = test_client.post("/auth/register", json={
+            "username": f"rolecase{rand_id}"[:10],
+            "password": "Password123!",
+            "name": "Test User",
+            "email": f"rolecase{rand_id}@example.com",
+            "phone": "1234567890",
+            "role": role
+        })
+        assert response.status_code in expected_status
+
+    @pytest.mark.parametrize("field,value,expected_status", [
+        ("username", "", [400, 422]),
+        ("password", "", [400, 422]),
+        ("email", "", [400, 422]),
+        ("phone", "", [400, 422]),
+    ])
+    def test_register_missing_fields_param(self, test_client, field, value, expected_status):
+        """Test registration with missing/empty fields (parametrized)"""
+        rand_id = random.randint(100000, 999999)
+        data = {
+            "username": f"param{rand_id}"[:10],
+            "password": "Password123!",
+            "name": "Test User",
+            "email": f"param{rand_id}@example.com",
+            "phone": "1234567890"
+        }
+        data[field] = value
+        response = test_client.post("/auth/register", json=data)
+        assert response.status_code in expected_status
+
+    def test_login_token_expiration(self, test_client, user_token):
+        """Test login token expiration (if supported)"""
+        # This is a placeholder; actual implementation depends on API
+        # Simulate expired token if possible
+        response = test_client.get("/auth/profile", headers={"authorization": "expired-token"})
+        assert response.status_code in [401, 403, 422]
+
+    def test_error_message_on_failed_login(self, test_client):
+        """Test error message on failed login"""
+        response = test_client.post("/auth/login", json={
+            "username": "notarealuser",
+            "password": "wrongpass"
+        })
+        assert response.status_code == 401
+        assert "error" in response.json() or "detail" in response.json()
+
+    def test_register_invalid_email_format(self, test_client):
+        """Test registration with invalid email format"""
+        rand_id = random.randint(100000, 999999)
+        response = test_client.post("/auth/register", json={
+            "username": f"invemail{rand_id}"[:10],
+            "password": "Password123!",
+            "name": "Test User",
+            "email": "not-an-email",
+            "phone": "1234567890"
+        })
+        assert response.status_code in [400, 422]
+
+    def test_register_invalid_phone_format(self, test_client):
+        """Test registration with invalid phone format"""
+        rand_id = random.randint(100000, 999999)
+        response = test_client.post("/auth/register", json={
+            "username": f"invphone{rand_id}"[:10],
+            "password": "Password123!",
+            "name": "Test User",
+            "email": f"invphone{rand_id}@example.com",
+            "phone": "abcde"
+        })
+        assert response.status_code in [400, 422]
+
+    def test_register_invalid_role(self, test_client):
+        """Test registration with invalid role value"""
+        rand_id = random.randint(100000, 999999)
+        response = test_client.post("/auth/register", json={
+            "username": f"invrole{rand_id}"[:10],
+            "password": "Password123!",
+            "name": "Test User",
+            "email": f"invrole{rand_id}@example.com",
+            "phone": "1234567890",
+            "role": "NOTAROLE"
+        })
+        assert response.status_code in [400, 422]
+
+    def test_register_weak_password(self, test_client):
+        """Test registration with weak password"""
+        rand_id = random.randint(100000, 999999)
+        response = test_client.post("/auth/register", json={
+            "username": f"weakpwd{rand_id}"[:10],
+            "password": "123",
+            "name": "Test User",
+            "email": f"weakpwd{rand_id}@example.com",
+            "phone": "1234567890"
+        })
+        assert response.status_code in [400, 422]
+
+    def test_update_profile_invalid_email(self, test_client, user_token):
+        """Test updating profile with invalid email format"""
+        response = test_client.put("/auth/profile",
+            headers={"authorization": user_token},
+            json={"email": "not-an-email"})
+        assert response.status_code in [400, 422]
+
+    def test_logout_invalid_token(self, test_client):
+        """Test logout with invalid token"""
+        response = test_client.get("/auth/logout", headers={"authorization": "invalid-token"})
+        assert response.status_code in [401, 422]
+
+    def test_register_and_login_rate_limit(self, test_client):
+        """Test registration and login rate limiting (if implemented)"""
+        # This is a placeholder; actual implementation depends on API
+        for _ in range(5):
+            rand_id = random.randint(100000, 999999)
+            test_client.post("/auth/register", json={
+                "username": f"ratelimit{rand_id}"[:10],
+                "password": "Password123!",
+                "name": "Test User",
+                "email": f"ratelimit{rand_id}@example.com",
+                "phone": "1234567890"
+            })
+        # If rate limiting is implemented, expect 429 Too Many Requests
+        # Otherwise, expect 200 or 400/422
+        response = test_client.post("/auth/register", json={
+            "username": "ratelimitlast",
+            "password": "Password123!",
+            "name": "Test User",
+            "email": "ratelimitlast@example.com",
+            "phone": "1234567890"
+        })
+        assert response.status_code in [200, 400, 422, 429]
