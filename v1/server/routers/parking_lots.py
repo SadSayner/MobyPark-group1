@@ -6,7 +6,7 @@ import sqlite3
 from ...storage_utils import load_parking_lot_data, save_parking_lot_data, load_json, save_data
 from ..deps import require_session, require_admin
 from ...Database.database_logic import get_db, get_parking_lot_by_id, get_all_parking_lots, update_parking_lot, delete_parking_lot
-from logging_config import log_event
+from v1.server.logging_config import log_event
 
 router = APIRouter()
 

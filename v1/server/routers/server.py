@@ -4,7 +4,7 @@ import pkgutil
 import importlib
 import traceback
 from fastapi import FastAPI
-from logging_config import log_event
+
 
 # ensure project root is on cwd so "v1" package imports resolve when running this file
 ROOT = os.path.abspath(os.path.join(
@@ -17,6 +17,8 @@ except Exception:
 # ensure project root is on sys.path so "import v1..." works when running this file directly
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
+
+from v1.server.logging_config import log_event
 
 # create FastAPI app and tracking lists so routers can be registered and status reported
 app = FastAPI()

@@ -8,7 +8,7 @@ from ...Database.database_logic import (
     update_reservation,
     delete_reservation
 )
-from logging_config import log_event
+from v1.server.logging_config import log_event
 import sqlite3
 from datetime import datetime
 

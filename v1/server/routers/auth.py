@@ -4,9 +4,10 @@ from pydantic import BaseModel
 from typing import Optional, Dict, Any
 import hashlib
 import uuid
-from logging_config import log_event
+
 
 import sqlite3
+from v1.server.logging_config import log_event
 from ...storage_utils import load_json, save_user_data
 from ...session_manager import add_session, remove_session, get_session
 from ..deps import require_session
