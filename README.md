@@ -149,5 +149,3 @@ Notes
 This setup is development-only
 
 No authentication/security is enabled for Elasticsearch
-
-Data persists using Docker volumes
