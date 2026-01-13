@@ -1,70 +1,52 @@
-MobyPark – Project Setup Guide
+# MobyPark – Project Setup Guide
 
 This document explains how to run the MobyPark backend API and the Elastic Stack (Elasticsearch + Kibana) locally for development.
 
-Prerequisites
-1. Git
+## Prerequisites
 
-Make sure Git is installed.
+### 1. Git
 
-Windows: https://git-scm.com/download/win
+Used for verion control
 
-Linux:
+- Windows: [Download Git for Windows](https://git-scm.com/download/win)
+- Linux: sudo apt install git
 
-sudo apt install git
-
-2. Python 3.10+
+### 2. Python 3.10+
 
 Required to run the FastAPI backend.
 
-Check version:
+- Check version: `python --version`
 
-python --version
+- Installation:
+  - Windows: [Download Python](https://www.python.org/downloads/)
+  - Linux: `sudo apt install python3 python3-pip`
 
+### 3. Docker & Docker Compose
 
-If not installed:
+Required to run Elasticsearch and Kibana.
 
-Windows: https://www.python.org/downloads/
+- Windows: Install Docker Desktop. Ensure Docker Desktop is running before continuing.
+- Linux:
+  ```
+  sudo apt install docker docker-compose
+  sudo systemctl start docker
+  sudo systemctl enable docker
+  ```
+  (Optional: run `sudo usermod -aG docker $USER` to avoid using sudo for every command).
 
-Linux:
+## Project Setup
 
-sudo apt install python3 python3-pip
+### 1. Clone the repository
 
-3. Docker & Docker Compose
+`git clone https://github.com/SadSayner/MobyPark-group1.git`
 
-Docker is required only for Elasticsearch, Kibana, and Filebeat.
+`cd MobyPark-group1`
 
-Windows
-
-Install Docker Desktop
-https://www.docker.com/products/docker-desktop/
-
-Make sure Docker Desktop is running before continuing
-
-Linux
-sudo apt install docker docker-compose
-sudo systemctl start docker
-sudo systemctl enable docker
-
-
-(Optional – avoid sudo every time)
-
-sudo usermod -aG docker $USER
-
-
-Log out and back in afterwards.
-
-Project Setup
-1. Clone the repository
-git clone <your-repository-url>
-cd MobyPark-group1
-
-2. Install Python dependencies
+### 2. Install Python dependencies
 
 (Optional but recommended: use a virtual environment)
 
 python -m venv venv
-
 
 Activate it:
 
@@ -72,16 +54,13 @@ Windows
 
 venv\Scripts\activate
 
-
 Linux / macOS
 
 source venv/bin/activate
 
-
 Install dependencies:
 
 pip install -r requirements.txt
-
 
 Make sure uvicorn is installed:
 
@@ -89,10 +68,9 @@ pip install "uvicorn[standard]"
 
 Starting the Elastic Stack (Docker)
 
-Start Elasticsearch, Kibana, and Filebeat using Docker Compose:
+Start Elasticsearch and Kibana using Docker Compose:
 
 docker compose up -d
-
 
 Verify containers are running:
 
@@ -104,16 +82,16 @@ Elasticsearch: http://localhost:9200
 
 Kibana: http://localhost:5601
 
-⚠️ Docker Desktop must be running on Windows, otherwise Docker will fail to connect.
+Docker Desktop must be running on Windows, otherwise Docker will fail to connect.
 
 Starting the FastAPI Backend (Uvicorn)
 
-⚠️ The API is NOT started via Docker yet.
+The API is NOT started via Docker yet.
 You must start it manually using uvicorn.
 
 From the project root directory:
 
-uvicorn v1.server.server:app --host 0.0.0.0 --port 8000 --reload
+uvicorn v1.server.routers.server:app --host 0.0.0.0 --port 8000 --reload
 
 API endpoints:
 
@@ -139,12 +117,10 @@ Go to http://localhost:5601
 
 Open Discover
 
-Create an index pattern:
-
-filebeat-*
-
+Create an index pattern: v1
 
 Select @timestamp as the time field
+If you get no logs it means the @timestamp is wrong, you can safely remove it and you will be able to see all the logs
 
 Stopping Everything
 Stop FastAPI
@@ -159,7 +135,6 @@ docker compose down
 Common Problems
 Docker error on Windows:
 open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified
-
 
 ➡ Docker Desktop is not running
 
