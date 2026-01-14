@@ -26,9 +26,9 @@ def init_database():
     db_exists = os.path.exists(db_path)
 
     if not db_exists:
-        print(f"[STARTUP] Database not found at {db_path}, creating...")
+        log_event(level="INFO", event="startup", message="Database not found, creating...")
         create_database(db_path)
-        print("[STARTUP] Database tables created.")
+        log_event(level="INFO", event="startup", message="Database tables created")
 
     # Check if the database has records (check users table as indicator)
     conn = get_connection(db_path)
@@ -37,19 +37,18 @@ def init_database():
         user_count = cur.fetchone()[0]
 
         if user_count == 0:
-            print("[STARTUP] Database is empty, filling with seed data...")
+            log_event(level="INFO", event="startup", message="Database is empty, filling with seed data...")
             conn.close()
 
             # Import and run fill_database
             from v1.Database.database_batches import fill_database
             fill_database(max_session_files=11)
-            print("[STARTUP] Database filled with seed data.")
+            log_event(level="INFO", event="startup", message="Database filled with seed data")
         else:
-            print(
-                f"[STARTUP] Database contains {user_count} users, skipping seed.")
+            log_event(level="INFO", event="startup", message=f"Database contains {user_count} users, skipping seed")
             conn.close()
     except Exception as e:
-        print(f"[STARTUP] Error checking database: {e}")
+        log_event(level="ERROR", event="startup", message=f"Error checking database: {e}")
         conn.close()
         raise
 
