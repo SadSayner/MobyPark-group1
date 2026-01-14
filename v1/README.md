@@ -150,8 +150,7 @@ pytest tests/test_endpoints.py -v
 
 ### Install Dependencies
 ```bash
-pip install fastapi uvicorn sqlite3 pydantic
-```
+pip install fastapi uvicorn sqlite3 pydantic click elasticsearch8
 
 ### Install Testing Dependencies
 ```bash
