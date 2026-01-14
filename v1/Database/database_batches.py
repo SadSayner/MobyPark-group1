@@ -12,11 +12,22 @@
 from __future__ import annotations
 import sqlite3
 import re
+import logging
 from typing import Iterable, List, Dict, Any, Sequence, Tuple, Union, Set
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import sys
 import os
+
+# Setup logging voor failed payments
+PAYMENT_LOG_FILE = "v1/Database/payment_failures.log"
+payment_logger = logging.getLogger("payment_failures")
+payment_logger.setLevel(logging.DEBUG)
+# Verwijder bestaande handlers om duplicatie te voorkomen
+payment_logger.handlers = []
+file_handler = logging.FileHandler(PAYMENT_LOG_FILE, mode='w', encoding='utf-8')
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
+payment_logger.addHandler(file_handler)
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from storage_utils import *  # noqa
@@ -818,7 +829,7 @@ def insert_payments(
         if not r.get("t_bank"):
             r["t_bank"] = t_data.get("bank")
 
-    # ---- 3) vereiste velden afdwingen
+    # ---- 3) vereiste velden afdwingen + logging van failures
     PAY_REQUIRED = (
         "transaction_id",
         "amount",
@@ -826,7 +837,38 @@ def insert_payments(
         "session_id",
         "parking_lot_id",
     )
-    rows_ok, missing = _require_fields(lod, PAY_REQUIRED, debug=debug)
+
+    # Custom require_fields met uitgebreide logging naar file
+    rows_ok: List[Row] = []
+    missing = 0
+    for r in lod:
+        missing_fields = [k for k in PAY_REQUIRED if r.get(k) is None]
+        if missing_fields:
+            missing += 1
+            # Log volledige rij en wat er mist naar file
+            payment_logger.error(
+                f"MISSING FIELDS: {missing_fields}\n"
+                f"  Poging tot insert met waardes:\n"
+                f"    transaction_id: {r.get('transaction_id')}\n"
+                f"    amount: {r.get('amount')}\n"
+                f"    user_id: {r.get('user_id')}\n"
+                f"    session_id: {r.get('session_id')}\n"
+                f"    parking_lot_id: {r.get('parking_lot_id')}\n"
+                f"    created_at: {r.get('created_at')}\n"
+                f"    completed: {r.get('completed')}\n"
+                f"    hash: {r.get('hash')}\n"
+                f"  Originele rij data:\n"
+                f"    initiator: {r.get('initiator')}\n"
+                f"    username: {r.get('username')}\n"
+                f"    user: {r.get('user')}\n"
+                f"    user_name: {r.get('user_name')}\n"
+                f"    transaction: {r.get('transaction')}\n"
+                f"    t_data: {r.get('t_data')}\n"
+                f"  Alle keys in originele rij: {list(r.keys())}\n"
+                f"---"
+            )
+        else:
+            rows_ok.append(r)
 
     # ---- 4) volgorde normaliseren en batch-insert
     data = _normalize_rows(rows_ok, PAY_FIELDS)
@@ -858,6 +900,10 @@ def insert_payments(
             print(
                 f"[PAY][DEBUG] unresolved usernames (sample up to 10): {unresolved[:10]}"
             )
+
+    # Flush log zodat alle failures direct naar file geschreven worden
+    for handler in payment_logger.handlers:
+        handler.flush()
 
     return result
 
@@ -1207,12 +1253,12 @@ def insert_parking_sessions(
     return result
 
 
-def load_parking_sessions(debug=False):
+def load_parking_sessions(debug=False, max_files=1501) -> List[dict]:
     all_sessions = []
 
     start_time = datetime.now()
 
-    for i in range(1, 1501):
+    for i in range(1, max_files):
         file_path = f"v1/data/pdata/p{i}-sessions.json"
         try:
             data = load_data(file_path)
@@ -1294,7 +1340,8 @@ def fill_database(debug_mode=False, max_session_files=None, max_payments=None):
     )
 
     # Laad sessions
-    all_sessions = load_parking_sessions(debug=debug_mode, max_files=max_session_files)
+    all_sessions = load_parking_sessions(
+        debug=debug_mode, max_files=max_session_files)
     print(f"\nInserting {len(all_sessions)} sessions in batches of 50,000...")
     batches = list(make_batches(all_sessions, 50000))
     total_inserted = 0
@@ -1310,12 +1357,14 @@ def fill_database(debug_mode=False, max_session_files=None, max_payments=None):
               f"failed={result['failed']}, time={batch_time:.2f}s, "
               f"progress={total_inserted}/{len(all_sessions)}")
 
-    print(f"Sessions complete: {total_inserted} inserted, {total_failed} failed\n")
+    print(
+        f"Sessions complete: {total_inserted} inserted, {total_failed} failed\n")
 
     # Laad payments
     payments_raw = load_data("v1/data/payments.json")
     if max_payments is not None:
-        print(f"DEBUG MODE: Limiting payments to {max_payments} records (total: {len(payments_raw)})")
+        print(
+            f"DEBUG MODE: Limiting payments to {max_payments} records (total: {len(payments_raw)})")
         payments = payments_raw[:max_payments]
     else:
         payments = payments_raw
@@ -1337,7 +1386,12 @@ def fill_database(debug_mode=False, max_session_files=None, max_payments=None):
               f"failed={result['failed']}, duplicates={result.get('duplicates', 0)}, "
               f"time={batch_time:.2f}s, progress={total_inserted}/{len(payments)}")
 
-    print(f"Payments complete: {total_inserted} inserted, {total_failed} failed, {total_duplicates} duplicates\n")
+    print(
+        f"Payments complete: {total_inserted} inserted, {total_failed} failed, {total_duplicates} duplicates")
+    if total_failed > 0:
+        print(f"  -> Bekijk {PAYMENT_LOG_FILE} voor details over gefaalde payments\n")
+    else:
+        print()
 
     delete_user_alias_csv()
 
@@ -1354,4 +1408,4 @@ if __name__ == "__main__":
     # fill_database(debug_mode=True, max_session_files=11, max_payments=10000)
 
     # Voor productie: alle data laden (1500 session bestanden + alle payments)
-    fill_database()
+    fill_database(max_session_files=11)
