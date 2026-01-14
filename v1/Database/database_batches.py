@@ -12,11 +12,23 @@
 from __future__ import annotations
 import sqlite3
 import re
+import csv
+import logging
 from typing import Iterable, List, Dict, Any, Sequence, Tuple, Union, Set
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import sys
 import os
+
+# Setup logging voor failed payments
+PAYMENT_LOG_FILE = "v1/Database/payment_failures.log"
+payment_logger = logging.getLogger("payment_failures")
+payment_logger.setLevel(logging.DEBUG)
+# Verwijder bestaande handlers om duplicatie te voorkomen
+payment_logger.handlers = []
+file_handler = logging.FileHandler(PAYMENT_LOG_FILE, mode='w', encoding='utf-8')
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
+payment_logger.addHandler(file_handler)
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from storage_utils import *  # noqa
@@ -790,13 +802,13 @@ def insert_payments(
             uid = None
             if isinstance(uname, str) and uname.strip():
                 key_lc = uname.strip().lower()
-                # 1. direct
+                # 1. direct lookup in DB
                 uid = direct_map.get(key_lc)
-                # 2. alias → canonical → DB
+                # 2. alias → canonical → DB lookup
                 if uid is None and alias_map:
-                    canon = alias_map.get(u_lc, {}).get("username")
+                    canon = alias_map.get(key_lc, {}).get("username")
                     if isinstance(canon, str) and canon.strip():
-                        canonical_needed.add(canon.strip().lower())
+                        uid = canonical_map.get(canon.strip().lower())
             r["user_id"] = _to_int(uid)
         else:
             r["user_id"] = _to_int(r.get("user_id"))
@@ -818,7 +830,7 @@ def insert_payments(
         if not r.get("t_bank"):
             r["t_bank"] = t_data.get("bank")
 
-    # ---- 3) vereiste velden afdwingen
+    # ---- 3) vereiste velden afdwingen + logging van failures
     PAY_REQUIRED = (
         "transaction_id",
         "amount",
@@ -826,7 +838,38 @@ def insert_payments(
         "session_id",
         "parking_lot_id",
     )
-    rows_ok, missing = _require_fields(lod, PAY_REQUIRED, debug=debug)
+
+    # Custom require_fields met uitgebreide logging naar file
+    rows_ok: List[Row] = []
+    missing = 0
+    for r in lod:
+        missing_fields = [k for k in PAY_REQUIRED if r.get(k) is None]
+        if missing_fields:
+            missing += 1
+            # Log volledige rij en wat er mist naar file
+            payment_logger.error(
+                f"MISSING FIELDS: {missing_fields}\n"
+                f"  Poging tot insert met waardes:\n"
+                f"    transaction_id: {r.get('transaction_id')}\n"
+                f"    amount: {r.get('amount')}\n"
+                f"    user_id: {r.get('user_id')}\n"
+                f"    session_id: {r.get('session_id')}\n"
+                f"    parking_lot_id: {r.get('parking_lot_id')}\n"
+                f"    created_at: {r.get('created_at')}\n"
+                f"    completed: {r.get('completed')}\n"
+                f"    hash: {r.get('hash')}\n"
+                f"  Originele rij data:\n"
+                f"    initiator: {r.get('initiator')}\n"
+                f"    username: {r.get('username')}\n"
+                f"    user: {r.get('user')}\n"
+                f"    user_name: {r.get('user_name')}\n"
+                f"    transaction: {r.get('transaction')}\n"
+                f"    t_data: {r.get('t_data')}\n"
+                f"  Alle keys in originele rij: {list(r.keys())}\n"
+                f"---"
+            )
+        else:
+            rows_ok.append(r)
 
     # ---- 4) volgorde normaliseren en batch-insert
     data = _normalize_rows(rows_ok, PAY_FIELDS)
@@ -858,6 +901,10 @@ def insert_payments(
             print(
                 f"[PAY][DEBUG] unresolved usernames (sample up to 10): {unresolved[:10]}"
             )
+
+    # Flush log zodat alle failures direct naar file geschreven worden
+    for handler in payment_logger.handlers:
+        handler.flush()
 
     return result
 
@@ -1207,12 +1254,12 @@ def insert_parking_sessions(
     return result
 
 
-def load_parking_sessions(debug=False):
+def load_parking_sessions(debug=False, max_files=1501) -> List[dict]:
     all_sessions = []
 
     start_time = datetime.now()
 
-    for i in range(1, 1501):
+    for i in range(1, max_files):
         file_path = f"v1/data/pdata/p{i}-sessions.json"
         try:
             data = load_data(file_path)
@@ -1253,7 +1300,15 @@ def wipe_table(
     print(f"Tabel '{table_name}' gewist.")
 
 
-def fill_database():
+def fill_database(debug_mode=False, max_session_files=None, max_payments=None):
+    """
+    Vul de database met data (geoptimaliseerd voor snelheid).
+
+    Args:
+        debug_mode: Als True, print extra debug informatie
+        max_session_files: Maximum aantal session bestanden om te laden (None = alle 1501)
+        max_payments: Maximum aantal payments om te laden (None = alles)
+    """
     if not os.path.exists("v1/Database/MobyPark.db"):
         print(f"Database 'v1/Database/MobyPark.db' bestaat niet.")
         create_database("v1/Database/MobyPark.db")
@@ -1261,40 +1316,97 @@ def fill_database():
     start = datetime.now()
     conn = get_connection()
 
+    # Optimize SQLite for bulk inserts
+    print("Optimizing database for bulk inserts...")
+    conn.execute("PRAGMA journal_mode = WAL;")  # Write-Ahead Logging
+    conn.execute("PRAGMA synchronous = NORMAL;")  # Sneller, nog steeds veilig
+    conn.execute("PRAGMA cache_size = -64000;")  # 64MB cache
+    conn.execute("PRAGMA temp_store = MEMORY;")  # Temp tables in memory
+    conn.commit()
+
     parking_lots = load_data("v1/data/parking-lots.json")
-    print("lots:", insert_parking_lots(conn, parking_lots, debug=True))
+    print("lots:", insert_parking_lots(conn, parking_lots, debug=debug_mode))
 
     users = load_data("v1/data/users.json")
-    print("users:", insert_users(conn, users, debug=True))
+    print("users:", insert_users(conn, users, debug=debug_mode))
 
     vehicles = load_data("v1/data/vehicles.json")
-    print("vehicles:", insert_vehicles(conn, vehicles, debug=True))
+    print("vehicles:", insert_vehicles(conn, vehicles, debug=debug_mode))
 
     reservations = load_data("v1/data/reservations.json")
     print(
         "reservations:",
         insert_reservations(conn, reservations,
-                            users_source=users, debug=True),
+                            users_source=users, debug=debug_mode),
     )
 
-    all_sessions = load_parking_sessions(True)
-    batches = make_batches(all_sessions, 400000)
-    for batch in batches:
-        result = insert_parking_sessions(conn, batch, debug=True)
-        print(
-            f"In batch: inserted={result['inserted']}, failed={result['failed']}")
+    # Laad sessions
+    all_sessions = load_parking_sessions(
+        debug=debug_mode, max_files=max_session_files)
+    print(f"\nInserting {len(all_sessions)} sessions in batches of 50,000...")
+    batches = list(make_batches(all_sessions, 50000))
+    total_inserted = 0
+    total_failed = 0
 
-    payments = load_data("v1/data/payments.json")
-    batches = make_batches(payments, 400000)
-    for batch in batches:
-        result = insert_payments(conn, batch, debug=True)
+    for idx, batch in enumerate(batches, 1):
+        batch_start = datetime.now()
+        result = insert_parking_sessions(conn, batch, debug=debug_mode)
+        batch_time = (datetime.now() - batch_start).total_seconds()
+        total_inserted += result['inserted']
+        total_failed += result['failed']
+        print(f"  Batch {idx}/{len(batches)}: inserted={result['inserted']}, "
+              f"failed={result['failed']}, time={batch_time:.2f}s, "
+              f"progress={total_inserted}/{len(all_sessions)}")
+
+    print(
+        f"Sessions complete: {total_inserted} inserted, {total_failed} failed\n")
+
+    # Laad payments
+    payments_raw = load_data("v1/data/payments.json")
+    if max_payments is not None:
         print(
-            f"In batch: inserted={result['inserted']}, failed={result['failed']}, duplicates={result.get('duplicates', 0)}"
-        )
+            f"DEBUG MODE: Limiting payments to {max_payments} records (total: {len(payments_raw)})")
+        payments = payments_raw[:max_payments]
+    else:
+        payments = payments_raw
+
+    print(f"Inserting {len(payments)} payments in batches of 50,000...")
+    batches = list(make_batches(payments, 50000))
+    total_inserted = 0
+    total_failed = 0
+    total_duplicates = 0
+
+    for idx, batch in enumerate(batches, 1):
+        batch_start = datetime.now()
+        result = insert_payments(conn, batch, debug=debug_mode)
+        batch_time = (datetime.now() - batch_start).total_seconds()
+        total_inserted += result['inserted']
+        total_failed += result['failed']
+        total_duplicates += result.get('duplicates', 0)
+        print(f"  Batch {idx}/{len(batches)}: inserted={result['inserted']}, "
+              f"failed={result['failed']}, duplicates={result.get('duplicates', 0)}, "
+              f"time={batch_time:.2f}s, progress={total_inserted}/{len(payments)}")
+
+    print(
+        f"Payments complete: {total_inserted} inserted, {total_failed} failed, {total_duplicates} duplicates")
+    if total_failed > 0:
+        print(f"  -> Bekijk {PAYMENT_LOG_FILE} voor details over gefaalde payments\n")
+    else:
+        print()
+
     delete_user_alias_csv()
+
+    # Restore normal settings
+    conn.execute("PRAGMA synchronous = FULL;")
+    conn.commit()
+
     end = datetime.now()
     print(f'Database gevuld in {(end - start).total_seconds():.2f} seconden.')
 
 
 if __name__ == "__main__":
-    fill_database()
+    # Voor debugging: laad 10 session bestanden (p1 t/m p10) en 10000 payments
+    # fill_database(debug_mode=True, max_session_files=11, max_payments=10000)
+
+    # Voor productie: alle data laden (1500 session bestanden + alle payments)
+    fill_database(max_session_files=11)
