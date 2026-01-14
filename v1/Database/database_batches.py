@@ -216,7 +216,8 @@ def read_user_alias_csv(csv_path: str = USER_ALIAS_TEMP_CSV) -> Dict[str, dict]:
             )
 
             if alias and canon:
-                alias_map[alias] = {"username": canon, "canonical_id": canon_id}
+                alias_map[alias] = {
+                    "username": canon, "canonical_id": canon_id}
 
     return alias_map
 
@@ -272,7 +273,8 @@ def build_aliases_from_user_json(
     with open(out_csv_path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(
-            ["alias_username", "canonical_username", "alias_id", "canonical_id", "note"]
+            ["alias_username", "canonical_username",
+                "alias_id", "canonical_id", "note"]
         )
         alias_rows_sorted = sorted(alias_rows, key=lambda r: r[0].lower())
         w.writerows(alias_rows_sorted)
@@ -338,7 +340,8 @@ def insert_users(
     rows_ok, missing = _require_fields(lod, USERS_FIELDS, debug=debug)
     data = _normalize_rows(rows_ok, USERS_FIELDS)
 
-    result = _batch_insert_per_row(conn, SQL_INSERT_USERS_IGNORE, data, debug=debug)
+    result = _batch_insert_per_row(
+        conn, SQL_INSERT_USERS_IGNORE, data, debug=debug)
     result["failed"] += missing
 
     return result
@@ -462,7 +465,8 @@ def insert_parking_lots(
 
 # ------------------- VEHICLES ----------------------------
 
-VEHICLE_FIELDS = ("license_plate", "make", "model", "color", "year", "created_at")
+VEHICLE_FIELDS = ("license_plate", "make", "model",
+                  "color", "year", "created_at")
 
 SQL_INSERT_VEHICLES_IGNORE = f"""
 INSERT OR IGNORE INTO vehicles ({", ".join(VEHICLE_FIELDS)})
@@ -486,7 +490,8 @@ def insert_vehicles(
 
     rows_ok, missing = _require_fields(lod, VEHICLE_FIELDS, debug=debug)
     data = _normalize_rows(rows_ok, VEHICLE_FIELDS)
-    result = _batch_insert_per_row(conn, SQL_INSERT_VEHICLES_IGNORE, data, debug=debug)
+    result = _batch_insert_per_row(
+        conn, SQL_INSERT_VEHICLES_IGNORE, data, debug=debug)
     result["failed"] += missing
     return result
 
@@ -648,7 +653,8 @@ def normalize_payment_rows_simple(
         # 2) user_id
         user_id = _to_int(_first(r.get("user_id")))
         if user_id is None:
-            uname = _first(r.get("username"), r.get("user"), r.get("user_name"))
+            uname = _first(r.get("username"), r.get(
+                "user"), r.get("user_name"))
             if isinstance(uname, str) and uname.strip():
                 user_id = username_to_id.get(uname.strip().lower())
 
@@ -734,13 +740,15 @@ def insert_payments(
     usernames: Set[str] = set()
     for r in lod:
         uname = _first(
-            r.get("initiator"), r.get("username"), r.get("user"), r.get("user_name")
+            r.get("initiator"), r.get("username"), r.get(
+                "user"), r.get("user_name")
         )
         if isinstance(uname, str) and uname.strip():
             usernames.add(uname.strip().lower())
 
     # 1a) directe DB-lookup (let op: helper geeft keys al lowercase terug)
-    direct_map = _map_usernames_to_user_ids(conn, usernames)  # { lower(username): id }
+    direct_map = _map_usernames_to_user_ids(
+        conn, usernames)  # { lower(username): id }
 
     # 1b) alias → canonical (beide lowercase) → DB-lookup
     try:
@@ -776,7 +784,8 @@ def insert_payments(
         # (c) user_id bepalen: initiator > username > user > user_name
         if r.get("user_id") in (None, ""):
             uname = _first(
-                r.get("initiator"), r.get("username"), r.get("user"), r.get("user_name")
+                r.get("initiator"), r.get("username"), r.get(
+                    "user"), r.get("user_name")
             )
             uid = None
             if isinstance(uname, str) and uname.strip():
@@ -821,7 +830,8 @@ def insert_payments(
 
     # ---- 4) volgorde normaliseren en batch-insert
     data = _normalize_rows(rows_ok, PAY_FIELDS)
-    result = _batch_insert_per_row(conn, SQL_INSERT_PAYMENTS_IGNORE, data, debug=debug)
+    result = _batch_insert_per_row(
+        conn, SQL_INSERT_PAYMENTS_IGNORE, data, debug=debug)
     result["failed"] += missing
 
     # consistentie met andere rapportages
@@ -833,7 +843,8 @@ def insert_payments(
             if r in rows_ok:
                 continue
             uname = _first(
-                r.get("initiator"), r.get("username"), r.get("user"), r.get("user_name")
+                r.get("initiator"), r.get("username"), r.get(
+                    "user"), r.get("user_name")
             )
             if isinstance(uname, str) and uname.strip():
                 key_lc = uname.strip().lower()
@@ -875,7 +886,8 @@ def _pick_duration(r: Row) -> Union[int, None]:
         d = _to_int(r.get(key))
         if d is not None:
             return d
-    start_keys = ("start_time", "startTime", "start", "start_datetime", "startDateTime")
+    start_keys = ("start_time", "startTime", "start",
+                  "start_datetime", "startDateTime")
     end_keys = ("end_time", "endTime", "end", "end_datetime", "endDateTime")
     start = next((r.get(k) for k in start_keys if r.get(k)), None)
     end = next((r.get(k) for k in end_keys if r.get(k)), None)
@@ -906,7 +918,8 @@ def normalize_reservation_rows(raw_rows, *, debug: bool = False) -> List[Row]:
         }
         if debug and (norm["duration"] is None) and shown < 10:
             present = [k for k in r.keys() if r.get(k) is not None]
-            print(f"[RESERVE] no duration for id={r.get('id')} present_keys={present}")
+            print(
+                f"[RESERVE] no duration for id={r.get('id')} present_keys={present}")
             shown += 1
         out.append(norm)
     return out
@@ -1099,7 +1112,8 @@ def insert_parking_sessions(
     username_map = _map_usernames_to_user_ids(conn, session_usernames)
 
     # For unresolved ones: check CSV alias
-    unresolved = {u for u in session_usernames if u.lower() not in username_map}
+    unresolved = {u for u in session_usernames if u.lower()
+                  not in username_map}
     canonical_usernames_needed = {
         alias_map.get(u.lower())["username"]
         for u in unresolved
@@ -1109,7 +1123,8 @@ def insert_parking_sessions(
 
     canonical_map = {}
     if canonical_usernames_needed:
-        canonical_map = _map_usernames_to_user_ids(conn, canonical_usernames_needed)
+        canonical_map = _map_usernames_to_user_ids(
+            conn, canonical_usernames_needed)
 
     # -------- Prepare rows ----------
     prepared: List[dict] = []
@@ -1138,12 +1153,14 @@ def insert_parking_sessions(
         started_iso = _iso_utc(started_dt) if started_dt else None
 
         # Duration
-        dur_raw = _first(r.get("duration_minutes"), r.get("duration"), r.get("minutes"))
+        dur_raw = _first(r.get("duration_minutes"),
+                         r.get("duration"), r.get("minutes"))
         duration_minutes = _to_int(dur_raw)
 
         if duration_minutes is None:
             stopped_raw = _first(
-                r.get("stopped"), r.get("stop"), r.get("end"), r.get("end_time")
+                r.get("stopped"), r.get("stop"), r.get(
+                    "end"), r.get("end_time")
             )
             stopped_dt = _lenient_parse_dt(stopped_raw)
             if started_dt and stopped_dt:
@@ -1184,7 +1201,8 @@ def insert_parking_sessions(
         )
 
     data = _normalize_rows(prepared, SESSIONS_FIELDS)
-    result = _batch_insert_per_row(conn, SQL_INSERT_SESSIONS_IGNORE, data, debug=debug)
+    result = _batch_insert_per_row(
+        conn, SQL_INSERT_SESSIONS_IGNORE, data, debug=debug)
     result["failed"] += failed_missing
     return result
 
@@ -1211,7 +1229,7 @@ def load_parking_sessions(debug=False):
 
 def make_batches(all_info, batch_size: int = 400000):
     for start in range(0, len(all_info), batch_size):
-        yield all_info[start : start + batch_size]
+        yield all_info[start: start + batch_size]
 
 
 # ------------------- Wipe table ----------------------------
@@ -1240,6 +1258,7 @@ def fill_database():
         print(f"Database 'v1/Database/MobyPark.db' bestaat niet.")
         create_database("v1/Database/MobyPark.db")
 
+    start = datetime.now()
     conn = get_connection()
 
     parking_lots = load_data("v1/data/parking-lots.json")
@@ -1254,14 +1273,16 @@ def fill_database():
     reservations = load_data("v1/data/reservations.json")
     print(
         "reservations:",
-        insert_reservations(conn, reservations, users_source=users, debug=True),
+        insert_reservations(conn, reservations,
+                            users_source=users, debug=True),
     )
 
     all_sessions = load_parking_sessions(True)
     batches = make_batches(all_sessions, 400000)
     for batch in batches:
         result = insert_parking_sessions(conn, batch, debug=True)
-        print(f"In batch: inserted={result['inserted']}, failed={result['failed']}")
+        print(
+            f"In batch: inserted={result['inserted']}, failed={result['failed']}")
 
     payments = load_data("v1/data/payments.json")
     batches = make_batches(payments, 400000)
@@ -1271,6 +1292,8 @@ def fill_database():
             f"In batch: inserted={result['inserted']}, failed={result['failed']}, duplicates={result.get('duplicates', 0)}"
         )
     delete_user_alias_csv()
+    end = datetime.now()
+    print(f'Database gevuld in {(end - start).total_seconds():.2f} seconden.')
 
 
 if __name__ == "__main__":
