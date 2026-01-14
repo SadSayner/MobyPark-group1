@@ -12,6 +12,7 @@
 from __future__ import annotations
 import sqlite3
 import re
+import csv
 import logging
 from typing import Iterable, List, Dict, Any, Sequence, Tuple, Union, Set
 from contextlib import contextmanager
@@ -801,13 +802,13 @@ def insert_payments(
             uid = None
             if isinstance(uname, str) and uname.strip():
                 key_lc = uname.strip().lower()
-                # 1. direct
+                # 1. direct lookup in DB
                 uid = direct_map.get(key_lc)
-                # 2. alias → canonical → DB
+                # 2. alias → canonical → DB lookup
                 if uid is None and alias_map:
-                    canon = alias_map.get(u_lc, {}).get("username")
+                    canon = alias_map.get(key_lc, {}).get("username")
                     if isinstance(canon, str) and canon.strip():
-                        canonical_needed.add(canon.strip().lower())
+                        uid = canonical_map.get(canon.strip().lower())
             r["user_id"] = _to_int(uid)
         else:
             r["user_id"] = _to_int(r.get("user_id"))
