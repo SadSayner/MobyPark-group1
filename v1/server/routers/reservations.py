@@ -1,12 +1,17 @@
 from fastapi import APIRouter, HTTPException, Depends, Query, Response
 from pydantic import BaseModel
 from typing import Optional
-from ..deps import require_session, require_admin
-from ...Database.database_logic import get_db, get_parking_lot_by_id, update_reservation, delete_reservation, get_user_id_by_username
 import csv
 import io
 import sqlite3
 from datetime import datetime
+from sys import path
+
+# setting path
+path.append('../../v1')
+
+from deps import require_session, require_admin
+from Database.database_logic import get_db, get_parking_lot_by_id, update_reservation, delete_reservation, get_user_id_by_username
 
 router = APIRouter()
 
