@@ -4,9 +4,14 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 import sqlite3
 
-from ..deps import require_session, require_admin
-from ...Database.database_logic import get_db, get_user_id_by_username
-from v1.server.logging_config import log_event
+from sys import path
+
+# setting path
+path.append('../../v1')
+
+from deps import require_session, require_admin
+from Database.database_logic import get_db, get_user_id_by_username
+from server.logging_config import log_event
 
 router = APIRouter()
 

@@ -4,11 +4,16 @@ from typing import Optional, Dict, Any, Union
 from datetime import datetime
 import sqlite3
 
-from ..deps import require_session, require_admin
-from ...storage_utils import load_payment_data, save_payment_data
-from ... import session_calculator as sc
-from ...Database.database_logic import get_db, get_user_id_by_username, get_payments_by_user_id, update_payment
-from v1.server.logging_config import log_event
+from sys import path
+
+# setting path
+path.append('../../v1')
+
+from deps import require_session, require_admin
+from storage_utils import load_payment_data, save_payment_data
+import session_calculator as sc
+from Database.database_logic import get_db, get_user_id_by_username, get_payments_by_user_id, update_payment
+from server.logging_config import log_event
 
 router = APIRouter()
 

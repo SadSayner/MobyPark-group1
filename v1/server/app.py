@@ -4,10 +4,10 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 import os
-from v1.server.logging_config import log_event
+from logging_config import log_event
 import time
 
-from .routers import auth, parking_lots, reservations, vehicles, payments
+from routers import auth, parking_lots, reservations, vehicles, payments
 
 
 def init_database():
@@ -16,8 +16,8 @@ def init_database():
     - If database doesn't exist: create tables
     - If database exists but is empty: fill with seed data
     """
-    from v1.Database.database_creation import create_database
-    from v1.Database.database_logic import get_connection
+    from Database.database_creation import create_database
+    from Database.database_logic import get_connection
 
     db_path = os.path.join(os.path.dirname(__file__),
                            '..', 'Database', 'MobyPark.db')

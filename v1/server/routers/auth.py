@@ -3,13 +3,17 @@ from fastapi import APIRouter, HTTPException, Depends, Header
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 import bcrypt, uuid, hashlib
-
 import sqlite3
-from ...storage_utils import load_json, save_user_data
-from ...session_manager import add_session, remove_session, get_session
-from ..deps import require_session
-from ...Database.database_logic import get_db, get_users_by_username, update_user
-from ..validation.validation import (
+from sys import path
+
+# setting path
+path.append('../../v1')
+
+from storage_utils import load_json, save_user_data
+from session_manager import add_session, remove_session, get_session
+from deps import require_session
+from Database.database_logic import get_db, get_users_by_username, update_user
+from validation.validation import (
     is_valid_username,
     is_valid_password,
     is_valid_email,
