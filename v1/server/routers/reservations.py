@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException, Depends, Query, Response
 from pydantic import BaseModel
-from typing import Optional
-from ..deps import require_session, require_admin
-from ...Database.database_logic import get_db, get_parking_lot_by_id, update_reservation, delete_reservation, get_user_id_by_username
+from typing import Optional, Literal
+from ..deps import require_session
+from ...Database.database_logic import get_db, get_parking_lot_by_id, get_user_id_by_username
 import csv
 import io
 import sqlite3
@@ -10,18 +10,36 @@ from datetime import datetime
 
 router = APIRouter()
 
+
+def _previous_month_year(now: datetime) -> tuple[int, int]:
+    if now.month == 1:
+        return 12, now.year - 1
+    return now.month - 1, now.year
+
 @router.get("/reservations/monthly_overview", summary="Get monthly parking overview as CSV", tags=["reservations"])
 def monthly_overview(
-    month: int = Query(..., ge=1, le=12, description="Month number (1-12)"),
-    year: int = Query(None, description="Year (defaults to current year)"),
+    month: int | None = Query(None, ge=1, le=12, description="Month number (1-12). Only previous month is allowed."),
+    year: int | None = Query(None, description="Year. Only previous month/year is allowed."),
+    format: Literal["csv", "json"] = Query("csv", description="Response format: csv or json"),
     user = Depends(require_session),
     con: sqlite3.Connection = Depends(get_db)
 ):
     """
     Returns a CSV table of all parking actions (including free) for the given month and year, with a total cost.
     """
+    last_month, last_year = _previous_month_year(datetime.now())
+
+    # Enforce "past month" only.
+    if month is None:
+        month = last_month
     if year is None:
-        year = datetime.now().year
+        year = last_year
+
+    if month != last_month or year != last_year:
+        raise HTTPException(
+            400,
+            detail=f"Only the previous month is allowed (month={last_month}, year={last_year})",
+        )
     user_id = get_user_id_by_username(con, user.get("username"))
     if not user_id:
         raise HTTPException(400, detail="User not found")
@@ -32,6 +50,21 @@ def monthly_overview(
     ).fetchall()
     # Get costs for each reservation (if available)
     # If cost is not present, treat as 0 (free)
+    if format == "json":
+        total = 0.0
+        items = []
+        for row in rows:
+            r = dict(row)
+            cost = r.get("cost", 0.0)
+            try:
+                cost = float(cost) if cost is not None else 0.0
+            except Exception:
+                cost = 0.0
+            r["cost"] = cost
+            total += cost
+            items.append(r)
+        return {"month": month, "year": year, "total": total, "items": items}
+
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["id", "parking_lot_id", "vehicle_id", "start_time", "duration", "status", "cost"])
@@ -50,7 +83,12 @@ def monthly_overview(
     writer.writerow(["Totaal", "", "", "", "", "", total])
     csv_data = output.getvalue()
     output.close()
-    return Response(content=csv_data, media_type="text/csv")
+    filename = f"monthly_overview_{year}_{month:02d}.csv"
+    return Response(
+        content=csv_data,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 class ReservationIn(BaseModel):

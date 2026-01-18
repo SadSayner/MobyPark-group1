@@ -33,7 +33,7 @@ def _wait_until_healthy(base_url: str, timeout_s: float = 30.0) -> None:
             status, _headers, payload = _http_get_json(f"{base_url}/health", timeout_s=2.0)
             if status == 200 and payload.get("ok") is True:
                 return
-        except Exception as e:  # noqa: BLE001 - used for polling readiness
+        except Exception as e:
             last_err = e
             time.sleep(0.2)
 
@@ -44,7 +44,7 @@ def _wait_until_healthy(base_url: str, timeout_s: float = 30.0) -> None:
 def api_base_url():
     """Starts the real API with uvicorn and yields its base URL (HTTP)."""
     try:
-        import uvicorn  # noqa: F401
+        import uvicorn
     except Exception:
         pytest.skip("uvicorn is required for e2e tests (pip install uvicorn)")
 
