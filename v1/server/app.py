@@ -40,9 +40,20 @@ def init_database():
             log_event(level="INFO", event="startup", message="Database is empty, filling with seed data...")
             conn.close()
 
+            skip_seed = os.getenv("MOBYPARK_SKIP_SEED", "").strip().lower() in {"1", "true", "yes"}
+            if skip_seed:
+                log_event(level="INFO", event="startup", message="Seed data skipped via MOBYPARK_SKIP_SEED")
+                return
+
+            max_session_files_env = os.getenv("MOBYPARK_SEED_MAX_SESSION_FILES", "").strip()
+            max_payments_env = os.getenv("MOBYPARK_SEED_MAX_PAYMENTS", "").strip()
+
+            max_session_files = int(max_session_files_env) if max_session_files_env else 11
+            max_payments = int(max_payments_env) if max_payments_env else None
+
             # Import and run fill_database
             from v1.Database.database_batches import fill_database
-            fill_database(max_session_files=11)
+            fill_database(max_session_files=max_session_files, max_payments=max_payments)
             log_event(level="INFO", event="startup", message="Database filled with seed data")
         else:
             log_event(level="INFO", event="startup", message=f"Database contains {user_count} users, skipping seed")
