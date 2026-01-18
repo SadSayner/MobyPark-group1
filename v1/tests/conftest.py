@@ -50,7 +50,7 @@ def user_token(test_client):
 
     # Login
     response = test_client.post("/auth/login", json={
-        "username": TEST_USER["username"],
+        "email": TEST_USER["email"],
         "password": TEST_USER["password"]
     })
 
@@ -73,7 +73,7 @@ def admin_token(test_client):
 
     # Login
     response = test_client.post("/auth/login", json={
-        "username": TEST_ADMIN["username"],
+        "email": TEST_ADMIN["email"],
         "password": TEST_ADMIN["password"]
     })
 

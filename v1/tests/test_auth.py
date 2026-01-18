@@ -50,7 +50,7 @@ class TestAuthentication:
     def test_login_invalid_credentials(self, test_client):
         """Test login with wrong password"""
         response = test_client.post("/auth/login", json={
-            "username": "pyt_user1",
+            "email": "pytest_user@example.com",
             "password": "WrongPassword123!"
         })
         assert response.status_code == 401
@@ -211,17 +211,17 @@ class TestAuthentication:
     # ============ LOGIN EDGE CASES ============
 
     def test_login_nonexistent_user(self, test_client):
-        """Test login with non-existent username"""
+        """Test login with non-existent email"""
         response = test_client.post("/auth/login", json={
-            "username": "nonexist1",
+            "email": "nonexistent@example.com",
             "password": "Password123!"
         })
         assert response.status_code == 401
 
-    def test_login_empty_username(self, test_client):
-        """Test login with empty username"""
+    def test_login_empty_email(self, test_client):
+        """Test login with empty email"""
         response = test_client.post("/auth/login", json={
-            "username": "",
+            "email": "",
             "password": "Password123!"
         })
         assert response.status_code in [400, 401, 422]
@@ -229,7 +229,7 @@ class TestAuthentication:
     def test_login_empty_password(self, test_client):
         """Test login with empty password"""
         response = test_client.post("/auth/login", json={
-            "username": "pyt_user1",
+            "email": "pytest_user@example.com",
             "password": ""
         })
         assert response.status_code in [400, 401, 422]
@@ -240,22 +240,23 @@ class TestAuthentication:
         assert response.status_code == 422
 
     def test_login_case_sensitivity(self, test_client):
-        """Test if login username is case sensitive"""
+        """Test if login email is case sensitive"""
         rand_id = random.randint(100000, 999999)
         username = f"Case{rand_id}"[:10]
+        email = f"case{rand_id}@example.com"
 
-        # Register with mixed case
+        # Register with lowercase email
         test_client.post("/auth/register", json={
             "username": username,
             "password": "Password123!",
             "name": "Case Test",
-            "email": f"case{rand_id}@example.com",
+            "email": email,
             "phone": "1234567890"
         })
 
         # Try login with different case
         response = test_client.post("/auth/login", json={
-            "username": username.lower(),
+            "email": email.upper(),
             "password": "Password123!"
         })
         # Should fail if case sensitive
@@ -264,7 +265,7 @@ class TestAuthentication:
     def test_login_sql_injection_attempt(self, test_client):
         """Test SQL injection protection in login"""
         response = test_client.post("/auth/login", json={
-            "username": "admin' OR '1'='1",
+            "email": "admin@test.com' OR '1'='1",
             "password": "password' OR '1'='1"
         })
         assert response.status_code == 401
@@ -303,7 +304,7 @@ class TestAuthentication:
 
         # Login with old password
         login_response = test_client.post("/auth/login", json={
-            "username": username,
+            "email": f"pwd{rand_id}@example.com",
             "password": old_password
         })
         assert login_response.status_code == 200
@@ -321,14 +322,14 @@ class TestAuthentication:
 
         # Try login with old password (should fail)
         old_login = test_client.post("/auth/login", json={
-            "username": username,
+            "email": f"pwd{rand_id}@example.com",
             "password": old_password
         })
         assert old_login.status_code == 401
 
         # Try login with new password (should succeed)
         new_login = test_client.post("/auth/login", json={
-            "username": username,
+            "email": f"pwd{rand_id}@example.com",
             "password": new_password
         })
         assert new_login.status_code == 200
@@ -386,7 +387,7 @@ class TestAuthentication:
         })
 
         login_response = test_client.post("/auth/login", json={
-            "username": username,
+            "email": f"logout{rand_id}@example.com",
             "password": "Password123!"
         })
         token = login_response.json()["session_token"]
@@ -414,13 +415,13 @@ class TestAuthentication:
 
         # Login twice
         login1 = test_client.post("/auth/login", json={
-            "username": username,
+            "email": f"multi{rand_id}@example.com",
             "password": "Password123!"
         })
         token1 = login1.json()["session_token"]
 
         login2 = test_client.post("/auth/login", json={
-            "username": username,
+            "email": f"multi{rand_id}@example.com",
             "password": "Password123!"
         })
         token2 = login2.json()["session_token"]

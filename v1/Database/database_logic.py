@@ -264,7 +264,7 @@ def get_users_by_username(con: sqlite3.Connection, username: str):
     cur = con.execute(sql, (username,))
     user = cur.fetchone()
     if user:
-        return User_model.from_dict(user)
+        return User_model.from_dict(**user)
     return None
 
 
@@ -274,7 +274,7 @@ def get_users_by_name(con: sqlite3.Connection, name: str):
     cur = con.execute(sql, (name,))
     rows = cur.fetchall()
     if rows:
-        return [User_model.from_dict(row) for row in rows]
+        return [User_model.from_dict(**row) for row in rows]
     return None
 
 
@@ -284,7 +284,18 @@ def get_users_by_email(con: sqlite3.Connection, email: str):
     cur = con.execute(sql, (email,))
     rows = cur.fetchall()
     if rows:
-        return [User_model.from_dict(row) for row in rows]
+        return [User_model.from_dict(**row) for row in rows]
+    return None
+
+
+def get_user_by_email(con: sqlite3.Connection, email: str):
+    """Get a single user by email address"""
+    con.execute("PRAGMA foreign_keys = ON;")
+    sql = "SELECT * FROM users WHERE email = ?"
+    cur = con.execute(sql, (email,))
+    user = cur.fetchone()
+    if user:
+        return User_model.from_dict(**user)
     return None
 
 

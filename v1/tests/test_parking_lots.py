@@ -472,7 +472,7 @@ class TestParkingSessions:
 
         # Login
         response = test_client.post("/auth/login", json={
-            "username": f"other{rand_id}"[:10],
+            "email": f"other{rand_id}@example.com",
             "password": "OtherPass123!"
         })
         return response.json()["session_token"]

@@ -8,7 +8,7 @@ import sqlite3
 from ...storage_utils import load_json, save_user_data
 from ...session_manager import add_session, remove_session, get_session
 from ..deps import require_session
-from ...Database.database_logic import get_db, get_users_by_username, update_user
+from ...Database.database_logic import get_db, get_users_by_username, get_user_by_email, update_user
 from ..validation.validation import (
     is_valid_username,
     is_valid_password,
@@ -54,7 +54,8 @@ class RegisterBody(BaseModel):
     role: Optional[str] = "USER"
 
 class LoginBody(BaseModel):
-    username: str
+    email: Optional[str] = None
+    username: Optional[str] = None
     password: str
 
 class UpdateProfileIn(BaseModel):
@@ -103,16 +104,29 @@ def register(payload: RegisterBody, con: sqlite3.Connection = Depends(get_db)):
 
 @router.post("/login")
 def login(payload: LoginBody, con: sqlite3.Connection = Depends(get_db)):
-    if not payload.username or not payload.password:
-        raise HTTPException(status_code=400, detail="Username and password are required")
+    if not payload.password:
+        raise HTTPException(status_code=400, detail="Password is required")
+    
+    if not payload.email and not payload.username:
+        raise HTTPException(status_code=400, detail="Email or username is required")
 
-    user = get_users_by_username(con, payload.username)
+    # Try to find user by email first, then by username
+    user = None
+    if payload.email:
+        user = get_user_by_email(con, payload.email)
+    elif payload.username:
+        # If username looks like an email, try email lookup first
+        if '@' in payload.username:
+            user = get_user_by_email(con, payload.username)
+        # If not found, try username lookup
+        if not user:
+            user = get_users_by_username(con, payload.username)
 
     if user and verify_password(payload.password, user.password):
         session_token = str(uuid.uuid4())
         add_session(session_token, {"id": user.id, "username": user.username, "name": user.name, "role": user.role})
         return {"message": "Login successful", "session_token": session_token}
-    raise HTTPException(status_code=401, detail="Invalid username or password")
+    raise HTTPException(status_code=401, detail="Invalid credentials")
 
 @router.get("/profile")
 def profile(user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
