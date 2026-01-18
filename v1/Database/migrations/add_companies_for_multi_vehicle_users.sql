@@ -1,22 +1,24 @@
--- Toon gebruikers met meerdere voertuigen
-SELECT user_id, COUNT(*) AS vehicle_count
-FROM user_vehicles
-GROUP BY user_id
-HAVING COUNT(*) > 1;
+PRAGMA foreign_keys = ON;
+
+BEGIN TRANSACTION;
+
+
+INSERT OR IGNORE INTO user_vehicles (user_id, vehicle_id)
+SELECT DISTINCT user_id, vehicle_id
+FROM reservations;
 
 INSERT INTO companies (name, created_at)
-SELECT 'Bedrijf van gebruiker ' || uv.user_id,
+SELECT user_id || '''s Company',
        CURRENT_TIMESTAMP
-FROM user_vehicles uv
-GROUP BY uv.user_id
-HAVING COUNT(uv.vehicle_id) > 1;
-
+FROM user_vehicles
+GROUP BY user_id
+HAVING COUNT(vehicle_id) > 1;
 
 UPDATE user_vehicles
 SET company_id = (
     SELECT c.company_id
     FROM companies c
-    WHERE c.name = 'Bedrijf van gebruiker ' || user_vehicles.user_id
+    WHERE c.name = user_vehicles.user_id || '''s Company'
 )
 WHERE user_id IN (
     SELECT user_id
@@ -25,8 +27,12 @@ WHERE user_id IN (
     HAVING COUNT(vehicle_id) > 1
 );
 
-
-SELECT uv.user_id, uv.vehicle_id, uv.company_id, c.name
+COMMIT;
+-- Verification Query
+SELECT uv.user_id,
+       uv.vehicle_id,
+       uv.company_id,
+       c.name AS company_name
 FROM user_vehicles uv
-JOIN companies c ON uv.company_id = c.company_id
+LEFT JOIN companies c ON uv.company_id = c.company_id
 ORDER BY uv.user_id;
