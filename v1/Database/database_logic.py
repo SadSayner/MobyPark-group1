@@ -21,9 +21,13 @@ def get_connection(db_path: str = None) -> sqlite3.Connection:
     Enables foreign key constraints.
     """
     if db_path is None:
-        # Use path relative to this file's location
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        db_path = os.path.join(current_dir, 'MobyPark.db')
+        env_db_path = os.getenv("MOBYPARK_DB_PATH")
+        if env_db_path:
+            db_path = env_db_path
+        else:
+            # Use path relative to this file's location
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            db_path = os.path.join(current_dir, 'MobyPark.db')
     con = sqlite3.connect(db_path)
     # Make rows accessible like dicts if you want (optional)
     con.row_factory = sqlite3.Row

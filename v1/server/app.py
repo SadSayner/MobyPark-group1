@@ -19,9 +19,14 @@ def init_database():
     from v1.Database.database_creation import create_database
     from v1.Database.database_logic import get_connection
 
-    db_path = os.path.join(os.path.dirname(__file__),
-                           '..', 'Database', 'MobyPark.db')
-    db_path = os.path.abspath(db_path)
+    env_db_path = os.getenv("MOBYPARK_DB_PATH")
+    if env_db_path:
+        db_path = env_db_path
+    else:
+        db_path = os.path.join(os.path.dirname(__file__), '..', 'Database', 'MobyPark.db')
+        db_path = os.path.abspath(db_path)
+
+    skip_seed = os.getenv("MOBYPARK_SKIP_SEED", "").strip().lower() in {"1", "true", "yes", "on"}
 
     db_exists = os.path.exists(db_path)
 
@@ -37,6 +42,10 @@ def init_database():
         user_count = cur.fetchone()[0]
 
         if user_count == 0:
+            if skip_seed:
+                log_event(level="INFO", event="startup", message="Database is empty; seeding disabled via MOBYPARK_SKIP_SEED")
+                conn.close()
+                return
             log_event(level="INFO", event="startup", message="Database is empty, filling with seed data...")
             conn.close()
 
