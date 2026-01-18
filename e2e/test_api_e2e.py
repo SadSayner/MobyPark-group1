@@ -152,3 +152,73 @@ def test_auth_register_login_profile_and_vehicle_flow(api_base_url: str):
         headers={"Authorization": token},
     )
     assert status == 401
+
+
+def test_admin_can_create_and_delete_parking_lot(api_base_url: str):
+    suffix = f"{int(time.time() * 1000) % 10_000_000:07d}"
+    username = f"a{suffix}"  # 8 chars total
+
+    admin = {
+        "username": username,
+        "password": "AdmPass1234!",
+        "name": "E2E Admin",
+        "email": f"{username}@example.com",
+        "phone": "1234567890",
+        "role": "ADMIN",
+    }
+
+    status, _headers, payload = _http_json("POST", f"{api_base_url}/auth/register", json_body=admin)
+    if status == 409:
+        suffix = f"{(int(time.time() * 1000) + 1) % 10_000_000:07d}"
+        username = f"a{suffix}"
+        admin["username"] = username
+        admin["email"] = f"{username}@example.com"
+        status, _headers, payload = _http_json("POST", f"{api_base_url}/auth/register", json_body=admin)
+    assert status == 200, payload
+
+    status, _headers, payload = _http_json(
+        "POST",
+        f"{api_base_url}/auth/login",
+        json_body={"username": admin["username"], "password": admin["password"]},
+    )
+    assert status == 200, payload
+    token = payload["session_token"]
+
+    # Create parking lot
+    lot_payload = {
+        "name": f"E2E Lot {suffix}",
+        "location": "E2E City",
+        "address": "1 Test Street",
+        "capacity": 10,
+        "reserved": 0,
+        "tariff": 2.5,
+        "daytariff": 15.0,
+        "lat": 52.3702,
+        "lng": 4.8952,
+    }
+    status, _headers, payload = _http_json(
+        "POST",
+        f"{api_base_url}/parking-lots",
+        headers={"Authorization": token},
+        json_body=lot_payload,
+    )
+    assert status == 200, payload
+    lot_id = payload["id"]
+
+    # Fetch it
+    status, _headers, payload = _http_json("GET", f"{api_base_url}/parking-lots/{lot_id}")
+    assert status == 200, payload
+    assert payload.get("id") == lot_id
+    assert payload.get("name") == lot_payload["name"]
+
+    # Delete it
+    status, _headers, payload = _http_json(
+        "DELETE",
+        f"{api_base_url}/parking-lots/{lot_id}",
+        headers={"Authorization": token},
+    )
+    assert status == 200, payload
+
+    # Verify gone
+    status, _headers, payload = _http_json("GET", f"{api_base_url}/parking-lots/{lot_id}")
+    assert status == 404
