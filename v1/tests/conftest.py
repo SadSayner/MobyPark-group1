@@ -53,6 +53,28 @@ def test_client():
     return client
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _clean_db_side_effects_for_tests():
+    """Keep pytest runs stable when the sqlite DB persists between runs.
+
+    We only clear tables that are frequently mutated by tests and can cause
+    order-dependent behavior (e.g., payments/session IDs).
+    """
+    from ..Database.database_logic import get_connection
+
+    con = get_connection()
+    try:
+        # Payments reference sessions, so delete payments first.
+        con.execute("DELETE FROM payments")
+        con.execute("DELETE FROM sessions")
+        con.commit()
+    finally:
+        try:
+            con.close()
+        except Exception:
+            pass
+
+
 @pytest.fixture(scope="function")
 def user_token(test_client):
     """Register and login a test user, return session token"""
