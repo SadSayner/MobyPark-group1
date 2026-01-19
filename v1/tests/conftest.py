@@ -3,6 +3,23 @@ Shared fixtures for all tests
 """
 import pytest
 from fastapi.testclient import TestClient
+
+# Prevent tests from making real network calls to Elasticsearch.
+# The production logger writes to Elasticsearch, but in unit/integration tests
+# we replace the module-level client with an in-memory stub.
+from ..server import logging_config
+
+
+class _FakeElasticsearch:
+    def __init__(self):
+        self.calls = []
+
+    def index(self, *, index, document):
+        self.calls.append((index, document))
+
+
+logging_config.es = _FakeElasticsearch()
+
 from ..server.app import app
 
 # Create test client

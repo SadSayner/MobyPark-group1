@@ -478,11 +478,12 @@ class TestAuthentication:
     def test_register_various_email_formats(self, test_client, email, expected_status):
         """Test registration with various email formats"""
         rand_id = random.randint(100000, 999999)
+        username = f"e{rand_id:09d}"  # exactly 10 chars, avoids truncation collisions
         # Avoid UNIQUE(email) collisions for the valid-email test case.
         if email == "test@example.com":
             email = f"emailcase{rand_id}@example.com"
         response = test_client.post("/auth/register", json={
-            "username": f"emailcase{rand_id}"[:10],
+            "username": username,
             "password": "Password123!",
             "name": "Test User",
             "email": email,
