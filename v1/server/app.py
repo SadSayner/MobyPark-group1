@@ -9,6 +9,11 @@ from v1.server.routers import auth, parking_lots, reservations, vehicles, paymen
 from v1.server.logging_config import log_event
 
 
+def _is_truthy_env(var_name: str) -> bool:
+    value = os.getenv(var_name, "").strip().lower()
+    return value in {"1", "true", "yes", "y", "on"}
+
+
 def init_database():
     """
     Initialize the database on startup:
@@ -37,12 +42,16 @@ def init_database():
 
         if user_count == 0:
             log_event(level="INFO", event="startup", message="Database is empty, filling with seed data...")
-            conn.close()
+            if _is_truthy_env("MOBYPARK_SKIP_SEED"):
+                log_event(level="INFO", event="startup", message="MOBYPARK_SKIP_SEED=1 set, skipping seed")
+                conn.close()
+            else:
+                conn.close()
 
-            # Import and run fill_database
-            from v1.Database.database_batches import fill_database
-            fill_database(max_session_files=11)
-            log_event(level="INFO", event="startup", message="Database filled with seed data")
+                # Import and run fill_database
+                from v1.Database.database_batches import fill_database
+                fill_database(max_session_files=11)
+                log_event(level="INFO", event="startup", message="Database filled with seed data")
         else:
             log_event(level="INFO", event="startup", message=f"Database contains {user_count} users, skipping seed")
             conn.close()
@@ -56,7 +65,10 @@ def init_database():
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup/shutdown events."""
     # Startup
-    app.state.es = wait_for_elasticsearch()
+    if _is_truthy_env("MOBYPARK_DISABLE_ELASTIC_LOGS"):
+        app.state.es = None
+    else:
+        app.state.es = wait_for_elasticsearch()
     try:
         init_database()
     except Exception as e:
@@ -130,7 +142,10 @@ def wait_for_elasticsearch(timeout=30):
     from elasticsearch import Elasticsearch
     import time
 
-    es = Elasticsearch("http://elasticsearch:9200")
+    if _is_truthy_env("MOBYPARK_DISABLE_ELASTIC_LOGS"):
+        return None
+
+    es = Elasticsearch(os.getenv("MOBYPARK_ELASTIC_URL", "http://elasticsearch:9200"))
     start = time.time()
 
     while time.time() - start < timeout:

@@ -16,8 +16,10 @@ class TestGeneralAPI:
 
     def test_cors_headers_present(self, test_client):
         """Test CORS headers are present on responses"""
-        response = test_client.get("/health")
-        assert "access-control-allow-origin" in response.headers or response.headers.get("access-control-allow-origin") == "*"
+        origin = "http://example.com"
+        response = test_client.get("/health", headers={"Origin": origin})
+        assert "access-control-allow-origin" in response.headers
+        assert response.headers.get("access-control-allow-origin") in {"*", origin}
 
     def test_middleware_logging_error_and_info(self, test_client, caplog):
         """Test middleware logs for error/info (structure only)"""

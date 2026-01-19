@@ -8,6 +8,7 @@ from ..deps import require_session, require_admin
 from ...storage_utils import load_payment_data, save_payment_data
 from ... import session_calculator as sc
 from ...Database.database_logic import get_db, get_user_id_by_username, get_payments_by_user_id, update_payment
+from ..logging_config import log_event
 
 router = APIRouter()
 

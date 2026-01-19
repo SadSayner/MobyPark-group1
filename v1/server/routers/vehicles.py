@@ -6,6 +6,7 @@ import sqlite3
 
 from ..deps import require_session, require_admin
 from ...Database.database_logic import get_db, get_user_id_by_username, update_vehicle, delete_vehicle
+from ..logging_config import log_event
 
 router = APIRouter()
 
