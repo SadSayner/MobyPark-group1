@@ -1,3 +1,10 @@
+import sys
+sys.stdout.flush()
+print("=" * 50)
+print("APP.PY IS BEING LOADED")
+print("=" * 50)
+sys.stdout.flush()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -5,9 +12,45 @@ from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 import os
 
-from v1.server.routers import auth, parking_lots, reservations, vehicles, payments
+print("Starting imports...")
+
+print("Importing auth router...")
+from v1.server.routers import auth
+
+print("Importing parking_lots router...")
+from v1.server.routers import parking_lots
+
+print("Importing reservations router...")
+from v1.server.routers import reservations
+
+print("Importing vehicles router...")
+from v1.server.routers import vehicles
+
+print("Importing payments router...")
+from v1.server.routers import payments
+
+print("All routers imported successfully")
+
 from v1.server.logging_config import log_event
 
+def wait_for_elasticsearch(timeout=30):
+    from elasticsearch import Elasticsearch
+    import time
+
+    es = Elasticsearch("http://elasticsearch:9200")
+    start = time.time()
+
+    while time.time() - start < timeout:
+        try:
+            if es.ping():
+                print("Elasticsearch ready")
+                return es
+        except Exception:
+            pass
+        time.sleep(2)
+
+    print("Elasticsearch not ready, continuing without it")
+    return None
 
 def init_database():
     """
@@ -15,27 +58,37 @@ def init_database():
     - If database doesn't exist: create tables
     - If database exists but is empty: fill with seed data
     """
+    print("init_database() called")
     from v1.Database.database_creation import create_database
     from v1.Database.database_logic import get_connection
 
     db_path = os.path.join(os.path.dirname(__file__),
                            '..', 'Database', 'MobyPark.db')
     db_path = os.path.abspath(db_path)
+    
+    print(f"Database path: {db_path}")
 
     db_exists = os.path.exists(db_path)
+    print(f"Database exists: {db_exists}")
 
     if not db_exists:
+        print("Creating database...")
         log_event(level="INFO", event="startup", message="Database not found, creating...")
         create_database(db_path)
         log_event(level="INFO", event="startup", message="Database tables created")
+        print("Database created")
 
     # Check if the database has records (check users table as indicator)
+    print("Connecting to database...")
     conn = get_connection(db_path)
     try:
+        print("Checking user count...")
         cur = conn.execute("SELECT COUNT(*) FROM users")
         user_count = cur.fetchone()[0]
+        print(f"User count: {user_count}")
 
         if user_count == 0:
+            print("Starting database fill (this may take a while)...")
             log_event(level="INFO", event="startup", message="Database is empty, filling with seed data...")
             if os.getenv("MOBYPARK_SKIP_SEED", "").strip().lower() in {"1", "true", "yes", "y", "on"}:
                 log_event(level="INFO", event="startup", message="MOBYPARK_SKIP_SEED=1 set, skipping seed")
@@ -48,9 +101,11 @@ def init_database():
                 fill_database(max_session_files=11)
                 log_event(level="INFO", event="startup", message="Database filled with seed data")
         else:
+            print(f"Database already has {user_count} users, skipping seed")
             log_event(level="INFO", event="startup", message=f"Database contains {user_count} users, skipping seed")
             conn.close()
     except Exception as e:
+        print(f"ERROR in init_database: {e}")
         log_event(level="ERROR", event="startup", message=f"Error checking database: {e}")
         conn.close()
         raise
@@ -58,8 +113,26 @@ def init_database():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_database()
+    """Lifespan context manager for startup/shutdown events."""
+    # Startup
+    print("Starting up...")
+    app.state.es = wait_for_elasticsearch()
+    
+    if app.state.es:
+        print("Elasticsearch connected successfully")
+    else:
+        print("Warning: Elasticsearch not available")
+    
+    try:
+        init_database()
+        print("Database initialized")
+    except Exception as e:
+        print(f"Startup warning: {e}")
+    
+    print("Application startup complete")
     yield
+    # Shutdown
+    print("Shutting down...")
 
 # API Metadata for Swagger UI
 app = FastAPI(
