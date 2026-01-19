@@ -1,13 +1,12 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 import os
-from v1.server.logging_config import log_event
-import time
 
-from .routers import auth, parking_lots, reservations, vehicles, payments
+from v1.server.routers import auth, parking_lots, reservations, vehicles, payments
+from v1.server.logging_config import log_event
 
 
 def init_database():
@@ -40,20 +39,9 @@ def init_database():
             log_event(level="INFO", event="startup", message="Database is empty, filling with seed data...")
             conn.close()
 
-            skip_seed = os.getenv("MOBYPARK_SKIP_SEED", "").strip().lower() in {"1", "true", "yes"}
-            if skip_seed:
-                log_event(level="INFO", event="startup", message="Seed data skipped via MOBYPARK_SKIP_SEED")
-                return
-
-            max_session_files_env = os.getenv("MOBYPARK_SEED_MAX_SESSION_FILES", "").strip()
-            max_payments_env = os.getenv("MOBYPARK_SEED_MAX_PAYMENTS", "").strip()
-
-            max_session_files = int(max_session_files_env) if max_session_files_env else 11
-            max_payments = int(max_payments_env) if max_payments_env else None
-
             # Import and run fill_database
             from v1.Database.database_batches import fill_database
-            fill_database(max_session_files=max_session_files, max_payments=max_payments)
+            fill_database(max_session_files=11)
             log_event(level="INFO", event="startup", message="Database filled with seed data")
         else:
             log_event(level="INFO", event="startup", message=f"Database contains {user_count} users, skipping seed")
@@ -68,9 +56,12 @@ def init_database():
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup/shutdown events."""
     # Startup
-    init_database()
+    app.state.es = wait_for_elasticsearch()
+    try:
+        init_database()
+    except Exception as e:
+        print("Startup warning:", e)
     yield
-    # Shutdown (nothing to do)
 
 # API Metadata for Swagger UI
 app = FastAPI(
@@ -103,46 +94,6 @@ app = FastAPI(
     },
 )
 
-
-@app.middleware("http")
-async def elastic_request_logger(request: Request, call_next):
-    start = time.time()
-
-    try:
-        response = await call_next(request)
-        return response
-    finally:
-        duration = round((time.time() - start) * 1000, 2)
-
-        if getattr(response, "status_code", None) == 500:
-            log_event(
-                level="ERROR",
-                event="http_request",
-                method=request.method,
-                path=request.url.path,
-                status_code=getattr(response, "status_code", None),
-                response_time_ms=duration,
-                exc_info=True,
-            )
-        elif getattr(response, "status_code", None) != 200:
-            log_event(
-                level="ERROR",
-                event="http_request",
-                method=request.method,
-                path=request.url.path,
-                status_code=getattr(response, "status_code", None),
-                response_time_ms=duration,
-            )
-        else:
-            log_event(
-                level="INFO",
-                event="http_request",
-                method=request.method,
-                path=request.url.path,
-                status_code=getattr(response, "status_code", None),
-                response_time_ms=duration,
-            )
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -163,17 +114,33 @@ static_path = os.path.join(os.path.dirname(__file__), "static")
 if os.path.exists(static_path):
     app.mount("/static", StaticFiles(directory=static_path), name="static")
 
-
 @app.get("/")
 def root():
     """Serve the simple testing interface"""
-    static_file = os.path.join(os.path.dirname(
-        __file__), "static", "index.html")
+    static_file = os.path.join(os.path.dirname(__file__), "static", "index.html")
     if os.path.exists(static_file):
         return FileResponse(static_file)
     return {"message": "API is running. Visit /docs for API documentation."}
 
-
 @app.get("/health")
 def health():
     return {"ok": True}
+
+def wait_for_elasticsearch(timeout=30):
+    from elasticsearch import Elasticsearch
+    import time
+
+    es = Elasticsearch("http://elasticsearch:9200")
+    start = time.time()
+
+    while time.time() - start < timeout:
+        try:
+            if es.ping():
+                print("Elasticsearch ready")
+                return es
+        except Exception:
+            pass
+        time.sleep(2)
+
+    print("Elasticsearch not ready, continuing without it")
+    return None

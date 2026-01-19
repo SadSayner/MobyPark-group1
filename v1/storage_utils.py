@@ -4,13 +4,13 @@ import csv
 import json
 import os
 import datetime
-from .Database.database_logic import *
-from .Models.Session_data_model import Session_data
-from .Models.parkinglots_model import Parking_lots_model
-from .Models.reservations_model import Reservations_model
-from .Models.user_model import User_model
-from .Models.vehicle_model import Vehicle_model
-from .Models.payment_model import Payment_model
+from v1.Database.database_logic import *
+from v1.Models.Session_data_model import Session_data
+from v1.Models.parkinglots_model import Parking_lots_model
+from v1.Models.reservations_model import Reservations_model
+from v1.Models.user_model import User_model
+from v1.Models.vehicle_model import Vehicle_model
+from v1.Models.payment_model import Payment_model
 
 
 def load_json(filename):
@@ -159,8 +159,7 @@ def add_parking_lots_to_db():
         if not record_exists(
             connection, "parking_lots", Parking_lots_model.to_dict(entry_value)
         ):
-            insert_parking_lot(
-                connection, Parking_lots_model.from_dict(entry_value))
+            insert_parking_lot(connection, Parking_lots_model.from_dict(entry_value))
         else:
             log_message = f"Parking lot with ID {entry_value['id']} already exists. Skipping insertion."
             logs.append(log_message)
@@ -201,8 +200,7 @@ def add_reservations_to_db():
     logs = []
     for entry_value in reservations:
         if not record_exists(connection, "reservations", entry_value):
-            insert_reservation(
-                connection, Reservations_model.from_dict(entry_value))
+            insert_reservation(connection, Reservations_model.from_dict(entry_value))
         else:
             log_message = f"Reservation with ID {entry_value['id']} already exists. Skipping insertion."
             logs.append(log_message)
@@ -218,8 +216,7 @@ def add_session_data_to_db():
         return  # Skip if no sessions file
     for entry_value in sessions.values():
         if not record_exists(connection, "sessions", entry_value):
-            insert_parking_session(
-                connection, Session_data.from_dict(entry_value))
+            insert_parking_session(connection, Session_data.from_dict(entry_value))
         else:
             log_message = f"Session with ID {entry_value['id']} already exists. Skipping insertion."
             logs.append(log_message)
@@ -234,8 +231,7 @@ def add_payments_to_db():
     if not payments:
         return  # Skip if no payments file
     for entry_value in payments:
-        transaction = Payment_model.to_dict(
-            Payment_model.from_dict(entry_value))
+        transaction = Payment_model.to_dict(Payment_model.from_dict(entry_value))
         if not record_exists(connection, "payments", transaction):
             insert_payment(connection, Payment_model.from_dict(entry_value))
         else:
