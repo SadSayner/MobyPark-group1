@@ -37,12 +37,16 @@ def init_database():
 
         if user_count == 0:
             log_event(level="INFO", event="startup", message="Database is empty, filling with seed data...")
-            conn.close()
+            if os.getenv("MOBYPARK_SKIP_SEED", "").strip().lower() in {"1", "true", "yes", "y", "on"}:
+                log_event(level="INFO", event="startup", message="MOBYPARK_SKIP_SEED=1 set, skipping seed")
+                conn.close()
+            else:
+                conn.close()
 
-            # Import and run fill_database
-            from v1.Database.database_batches import fill_database
-            fill_database(max_session_files=11)
-            log_event(level="INFO", event="startup", message="Database filled with seed data")
+                # Import and run fill_database
+                from v1.Database.database_batches import fill_database
+                fill_database(max_session_files=11)
+                log_event(level="INFO", event="startup", message="Database filled with seed data")
         else:
             log_event(level="INFO", event="startup", message=f"Database contains {user_count} users, skipping seed")
             conn.close()
@@ -54,13 +58,7 @@ def init_database():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifespan context manager for startup/shutdown events."""
-    # Startup
-    app.state.es = wait_for_elasticsearch()
-    try:
-        init_database()
-    except Exception as e:
-        print("Startup warning:", e)
+    init_database()
     yield
 
 # API Metadata for Swagger UI
@@ -125,22 +123,3 @@ def root():
 @app.get("/health")
 def health():
     return {"ok": True}
-
-def wait_for_elasticsearch(timeout=30):
-    from elasticsearch import Elasticsearch
-    import time
-
-    es = Elasticsearch("http://elasticsearch:9200")
-    start = time.time()
-
-    while time.time() - start < timeout:
-        try:
-            if es.ping():
-                print("Elasticsearch ready")
-                return es
-        except Exception:
-            pass
-        time.sleep(2)
-
-    print("Elasticsearch not ready, continuing without it")
-    return None

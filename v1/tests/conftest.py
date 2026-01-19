@@ -3,6 +3,23 @@ Shared fixtures for all tests
 """
 import pytest
 from fastapi.testclient import TestClient
+
+# Prevent tests from making real network calls to Elasticsearch.
+# The production logger writes to Elasticsearch, but in unit/integration tests
+# we replace the module-level client with an in-memory stub.
+from ..server import logging_config
+
+
+class _FakeElasticsearch:
+    def __init__(self):
+        self.calls = []
+
+    def index(self, *, index, document):
+        self.calls.append((index, document))
+
+
+logging_config.es = _FakeElasticsearch()
+
 from ..server.app import app
 
 # Create test client
@@ -34,6 +51,28 @@ TEST_ADMIN = {
 def test_client():
     """Provide test client for all tests"""
     return client
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _clean_db_side_effects_for_tests():
+    """Keep pytest runs stable when the sqlite DB persists between runs.
+
+    We only clear tables that are frequently mutated by tests and can cause
+    order-dependent behavior (e.g., payments/session IDs).
+    """
+    from ..Database.database_logic import get_connection
+
+    con = get_connection()
+    try:
+        # Payments reference sessions, so delete payments first.
+        con.execute("DELETE FROM payments")
+        con.execute("DELETE FROM sessions")
+        con.commit()
+    finally:
+        try:
+            con.close()
+        except Exception:
+            pass
 
 
 @pytest.fixture(scope="function")
