@@ -1,8 +1,8 @@
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from contextlib import asynccontextmanager
 import os
 
 from v1.server.routers import auth, parking_lots, reservations, vehicles, payments
@@ -65,6 +65,7 @@ async def lifespan(app: FastAPI):
 
 # API Metadata for Swagger UI
 app = FastAPI(
+    lifespan=lifespan,
     title="MobyPark API",
     description="""
     **MobyPark Parking Management System API**

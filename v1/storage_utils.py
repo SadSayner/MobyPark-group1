@@ -5,12 +5,12 @@ import json
 import os
 import datetime
 from v1.Database.database_logic import *
-from .Models.Session_data_model import Session_data
-from .Models.parkinglots_model import Parking_lots_model
-from .Models.reservations_model import Reservations_model
-from .Models.user_model import User_model
-from .Models.vehicle_model import Vehicle_model
-from .Models.payment_model import Payment_model
+from v1.Models.Session_data_model import Session_data
+from v1.Models.parkinglots_model import Parking_lots_model
+from v1.Models.reservations_model import Reservations_model
+from v1.Models.user_model import User_model
+from v1.Models.vehicle_model import Vehicle_model
+from v1.Models.payment_model import Payment_model
 
 
 def load_json(filename):
