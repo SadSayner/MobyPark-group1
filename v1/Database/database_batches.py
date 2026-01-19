@@ -19,8 +19,8 @@ import sys
 import os
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from storage_utils import *  # noqa
-from database_creation import create_database  # noqa
+from v1.storage_utils import *  # noqa
+from v1.Database.database_creation import create_database  # noqa
 
 Row = Dict[str, Any]
 Rows = Iterable[Row]
@@ -1235,7 +1235,7 @@ def wipe_table(
     print(f"Tabel '{table_name}' gewist.")
 
 
-def fill_database():
+def fill_database(max_session_files=None):
     if not os.path.exists("v1/Database/MobyPark.db"):
         print(f"Database 'v1/Database/MobyPark.db' bestaat niet.")
         create_database("v1/Database/MobyPark.db")
