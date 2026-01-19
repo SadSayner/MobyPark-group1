@@ -3,6 +3,7 @@ import pkgutil
 import importlib
 import traceback
 from fastapi import FastAPI
+from v1.server.logging_config import log_event
 
 # ensure project root is on cwd so "v1" package imports resolve when running this file
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
@@ -34,6 +35,10 @@ try:
                 app.include_router(router)
                 loaded.append(name)
             else:
+                reason = "no router attribute"
+                failed.append((name, reason))
+                log_event(level="ERROR", event="router_load_failed", message=reason,
+                          router_name=name)
                 failed.append((name, "no router attribute"))
         except Exception as e:
             failed.append((name, str(e)))

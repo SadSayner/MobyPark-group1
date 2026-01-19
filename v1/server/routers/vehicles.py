@@ -38,6 +38,8 @@ def create_vehicle(payload: VehicleIn, user = Depends(require_session), con: sql
     # Use database function to get user ID
     uid = get_user_id_by_username(con, user.get("username"))
     if not uid:
+        log_event("ERROR", event="vehicle_create_failed",
+                  message="user_not_found")
         raise HTTPException(400, detail="User not found")
 
     lid = _mk_lid(payload.license_plate)
@@ -51,7 +53,15 @@ def create_vehicle(payload: VehicleIn, user = Depends(require_session), con: sql
         (uid, lid)
     ).fetchone()
     if exists:
-        raise HTTPException(400, detail={"error": "Vehicle already exists", "id": exists["id"]})
+        log_event(
+            "WARNING",
+            event="vehicle_create_failed",
+            username=user.get("username"),
+            message="vehicle_exists",
+            vehicle_id=exists["id"]
+        )
+        raise HTTPException(
+            400, detail={"error": "Vehicle already exists", "id": exists["id"]})
 
     created_at = now_str()
     # Insert into vehicles table with all fields
@@ -85,6 +95,8 @@ def update_vehicle_route(lid: str, payload: UpdateVehicleIn, user = Depends(requ
     # Use database function to get user ID
     uid = get_user_id_by_username(con, user.get("username"))
     if not uid:
+        log_event("ERROR", event="vehicle_update_failed",
+                  message="user_not_found")
         raise HTTPException(400, detail="User not found")
 
     # Look up vehicle by id (lid parameter is the vehicle ID from tests)
@@ -98,6 +110,8 @@ def update_vehicle_route(lid: str, payload: UpdateVehicleIn, user = Depends(requ
     ).fetchone()
 
     if not row:
+        log_event("WARNING", event="vehicle_update_failed",
+                  message="vehicle_not_found", vehicle_id=lid)
         raise HTTPException(404, detail="Vehicle not found")
 
     # Build update query dynamically for provided fields
@@ -143,6 +157,8 @@ def delete_vehicle_route(lid: str, user = Depends(require_session), con: sqlite3
     # Use database function to get user ID
     uid = get_user_id_by_username(con, user.get("username"))
     if not uid:
+        log_event("ERROR", event="vehicle_delete_failed",
+                  message="user_not_found")
         raise HTTPException(400, detail="User not found")
 
     # Look up vehicle by id
@@ -155,6 +171,8 @@ def delete_vehicle_route(lid: str, user = Depends(require_session), con: sqlite3
         (uid, int(lid))
     ).fetchone()
     if not row:
+        log_event("WARNING", event="vehicle_delete_failed",
+                  message="vehicle_not_found", vehicle_id=lid)
         raise HTTPException(404, detail="Vehicle not found")
 
     # Delete from user_vehicles junction table
@@ -199,6 +217,8 @@ def list_user_vehicles(user_name: str, admin = Depends(require_admin), con: sqli
     # Use database function to get user ID
     uid = get_user_id_by_username(con, user_name)
     if not uid:
+        log_event("WARNING", event="vehicle_list_admin_failed",
+                  message="user_not_found", target_user=user_name)
         raise HTTPException(404, detail="User not found")
     rows = con.execute(
         """
@@ -285,4 +305,3 @@ def vehicle_history(vid: str, user = Depends(require_session), con: sqlite3.Conn
 
     # placeholder: return empty list (no vehicle history table in current schema)
     return []
-# ...existing code...

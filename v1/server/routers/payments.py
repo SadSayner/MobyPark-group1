@@ -35,13 +35,19 @@ def create_payment(payload: PaymentIn, user = Depends(require_session), con: sql
     try:
         amount = float(payload.amount)
     except Exception:
+        log_event(level="WARNING", event="payment_create_failed", message="invalid_amount_format",
+                  username=user["username"])
         raise HTTPException(400, detail={"error": "Invalid amount"})
     if amount <= 0:
+        log_event(level="WARNING", event="payment_create_failed", message="amount_zero_or_negative",
+                  username=user["username"])
         raise HTTPException(400, detail={"error": "Invalid amount"})
 
     # Use database function to get user ID
     user_id = get_user_id_by_username(con, user.get("username"))
     if not user_id:
+        log_event(level="ERROR", event="payment_create_failed", message="user_not_found_in_db",
+                  username=user["username"])
         raise HTTPException(400, detail="User not found")
 
     #link parking session (id) to created payment. Only if the user owns the session or is admin.
@@ -52,13 +58,22 @@ def create_payment(payload: PaymentIn, user = Depends(require_session), con: sql
         try:
             linked_sid = int(payload.session_id if payload.session_id else payload.parkingsession_id)
         except Exception:
-            raise HTTPException(400, detail="Invalid parkingsession_id (expect parking session id)")
-        srow = con.execute("SELECT session_id, user_id, parking_lot_id FROM sessions WHERE session_id = ?", (linked_sid,)).fetchone()
+            log_event(level="WARNING", event="payment_create_failed", message="invalid_session_id_format",
+                      username=user["username"])
+            raise HTTPException(
+                400, detail="Invalid parkingsession_id (expect parking session id)")
+        srow = con.execute(
+            "SELECT session_id, user_id, parking_lot_id FROM sessions WHERE session_id = ?", (linked_sid,)).fetchone()
         if not srow:
+            log_event(level="WARNING", event="payment_create_failed", message="linked_session_not_found",
+                      username=user["username"])
             raise HTTPException(404, detail="Linked parking session not found")
         # only owner or admin may create payment for the session
         if user.get("role") != "ADMIN" and srow["user_id"] is not None and srow["user_id"] != user_id:
-            raise HTTPException(403, detail="Not allowed to create payment for this session")
+            log_event(level="WARNING", event="payment_create_failed", message="session_ownership_mismatch",
+                      username=user["username"])
+            raise HTTPException(
+                403, detail="Not allowed to create payment for this session")
         session_id = srow["session_id"]
         parking_lot_id = srow["parking_lot_id"]
 
@@ -120,9 +135,14 @@ def refund_payment(payload: PaymentIn, admin = Depends(require_admin), con: sqli
     try:
         amount = float(payload.amount)
     except Exception:
+        log_event(level="WARNING", event="payment_refund_failed", message="invalid_amount_format",
+                  admin=admin["username"])
         raise HTTPException(400, detail={"error": "Invalid amount"})
     if amount <= 0:
-        raise HTTPException(400, detail={"error": "amount must be greater than zero"})
+        log_event(level="WARNING", event="payment_refund_failed", message="amount_zero_or_negative",
+                  admin=admin["username"])
+        raise HTTPException(
+            400, detail={"error": "amount must be greater than zero"})
 
     #fetch admin id (prefer id from require_admin if present)
     admin_id = admin.get("id")
@@ -130,6 +150,8 @@ def refund_payment(payload: PaymentIn, admin = Depends(require_admin), con: sqli
         # Use database function to get admin ID
         admin_id = get_user_id_by_username(con, admin.get("username"))
         if not admin_id:
+            log_event(level="ERROR", event="payment_refund_failed", message="admin_not_found_in_db",
+                      admin=admin["username"])
             raise HTTPException(400, detail="Admin not found")
 
     # resolve linked session (if provided) and determine refund recipient
@@ -140,9 +162,15 @@ def refund_payment(payload: PaymentIn, admin = Depends(require_admin), con: sqli
         try:
             sid = int(payload.parkingsession_id)
         except Exception:
-            raise HTTPException(400, detail="Invalid parkingsession_id (expect parking session id)")
-        srow = con.execute("SELECT session_id, user_id, parking_lot_id FROM sessions WHERE session_id = ?", (sid,)).fetchone()
+            log_event(level="WARNING", event="payment_refund_failed", message="invalid_session_id_format",
+                      admin=admin["username"])
+            raise HTTPException(
+                400, detail="Invalid parkingsession_id (expect parking session id)")
+        srow = con.execute(
+            "SELECT session_id, user_id, parking_lot_id FROM sessions WHERE session_id = ?", (sid,)).fetchone()
         if not srow:
+            log_event(level="WARNING", event="payment_refund_failed", message="linked_session_not_found",
+                      admin=admin["username"])
             raise HTTPException(404, detail="Linked parking session not found")
         session_id = srow["session_id"]
         parking_lot_id = srow["parking_lot_id"]
@@ -151,10 +179,15 @@ def refund_payment(payload: PaymentIn, admin = Depends(require_admin), con: sqli
     # if recipient not determined from session, require explicit recipient username
     if recipient_user_id is None:
         if not payload.recipient:
-            raise HTTPException(400, detail="Refund must specify a recipient username or a session with an owner")
+            log_event(level="WARNING", event="payment_refund_failed", message="missing_recipient",
+                      admin=admin["username"])
+            raise HTTPException(
+                400, detail="Refund must specify a recipient username or a session with an owner")
         # Use database function to get recipient ID
         recipient_user_id = get_user_id_by_username(con, payload.recipient)
         if not recipient_user_id:
+            log_event(level="WARNING", event="payment_refund_failed", message="recipient_not_found",
+                      admin=admin["username"])
             raise HTTPException(404, detail="Recipient user not found")
 
     # transaction metadata
@@ -226,15 +259,25 @@ def complete_payment(transaction_id: str, payload: PaymentIn, user = Depends(req
     # find payment by transaction_id
     row = con.execute("SELECT * FROM payments WHERE transaction_id = ?", (transaction_id,)).fetchone()
     if not row:
+        log_event(level="WARNING", event="payment_complete_failed", message="not_found",
+                  username=user["username"], transaction_id=transaction_id)
         raise HTTPException(404, detail="Payment not found")
 
     # require provider data and validation hash
     if payload.t_data is None or payload.validation is None:
-        raise HTTPException(400, detail={"error": "Require field missing", "field": "t_data/validation"})
+        log_event(level="WARNING", event="payment_complete_failed", message="missing_provider_data",
+                  username=user["username"], transaction_id=transaction_id)
+        raise HTTPException(
+            400, detail={"error": "Require field missing", "field": "t_data/validation"})
     if row["hash"] != payload.validation:
-        raise HTTPException(401, detail={"error": "Validation failed", "info": "Security hash mismatch"})
+        log_event(level="WARNING", event="payment_complete_failed", message="hash_mismatch",
+                  username=user["username"], transaction_id=transaction_id)
+        raise HTTPException(
+            401, detail={"error": "Validation failed", "info": "Security hash mismatch"})
 
     if not isinstance(payload.t_data, dict):
+        log_event(level="WARNING", event="payment_complete_failed", message="invalid_t_data_format",
+                  username=user["username"], transaction_id=transaction_id)
         raise HTTPException(400, detail="t_data must be an object")
 
 
@@ -259,6 +302,8 @@ def complete_payment(transaction_id: str, payload: PaymentIn, user = Depends(req
     }
     success = update_payment(con, transaction_id, updates)
     if not success:
+        log_event(level="ERROR", event="payment_complete_failed", message="db_error",
+                  username=user["username"], transaction_id=transaction_id)
         raise HTTPException(500, detail="Failed to update payment")
 
     updated = con.execute("SELECT * FROM payments WHERE transaction_id = ?", (transaction_id,)).fetchone()
@@ -296,11 +341,15 @@ def get_payment(payment_id: str, user = Depends(require_session), con: sqlite3.C
     """Get a single payment by ID"""
     user_id = get_user_id_by_username(con, user.get("username"))
     if not user_id:
+        log_event(level="ERROR", event="payment_get_failed", message="user_not_found_in_db",
+                  username=user["username"])
         raise HTTPException(404, detail="User not found")
 
     try:
         pid = int(payment_id)
     except ValueError:
+        log_event(level="WARNING", event="payment_get_failed", message="invalid_id_format",
+                  username=user["username"], payment_id=payment_id)
         raise HTTPException(400, detail="Invalid payment ID")
 
     row = con.execute(
