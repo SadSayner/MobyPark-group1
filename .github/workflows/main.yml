@@ -45,7 +45,6 @@ jobs:
   build-and-push:
     needs: [test, e2e-tests]
     runs-on: ubuntu-latest
-    environment: dockerhub
     if: github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
