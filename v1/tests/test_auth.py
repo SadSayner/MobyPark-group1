@@ -499,8 +499,9 @@ class TestAuthentication:
     def test_register_various_roles(self, test_client, role, expected_status):
         """Test registration with various roles"""
         rand_id = random.randint(100000, 999999)
+        username = f"r{rand_id:07d}"  # 8 chars, starts with letter, avoids truncation collisions
         response = test_client.post("/auth/register", json={
-            "username": f"rolecase{rand_id}"[:10],
+            "username": username,
             "password": "Password123!",
             "name": "Test User",
             "email": f"rolecase{rand_id}@example.com",
