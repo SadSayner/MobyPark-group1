@@ -96,10 +96,11 @@ def init_database():
             else:
                 conn.close()
 
-                # Import and run fill_database
-                from v1.Database.database_batches import fill_database
-                fill_database(max_session_files=11)
-                log_event(level="INFO", event="startup", message="Database filled with seed data")
+            # Import and run fill_database
+            from v1.Database.database_batches import fill_database
+            fill_database(max_session_files=11)
+            log_event(level="INFO", event="startup", message="Database filled with seed data")
+            print("Database fill complete")
         else:
             print(f"Database already has {user_count} users, skipping seed")
             log_event(level="INFO", event="startup", message=f"Database contains {user_count} users, skipping seed")

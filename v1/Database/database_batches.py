@@ -785,9 +785,9 @@ def insert_payments(
                 uid = direct_map.get(key_lc)
                 # 2. alias → canonical → DB
                 if uid is None and alias_map:
-                    canon = alias_map.get(u_lc, {}).get("username")
+                    canon = alias_map.get(key_lc, {}).get("username")
                     if isinstance(canon, str) and canon.strip():
-                        canonical_needed.add(canon.strip().lower())
+                        uid = canonical_map.get(canon.strip().lower())
             r["user_id"] = _to_int(uid)
         else:
             r["user_id"] = _to_int(r.get("user_id"))

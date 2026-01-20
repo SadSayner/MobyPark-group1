@@ -24,6 +24,8 @@ services:
       - elasticsearch
     environment:
       - ELASTICSEARCH_HOST=http://elasticsearch:9200
+    volumes:
+      - ./v1/Database:/MOBYPARK-GROUP1/v1/Database
       
   filebeat:
     image: docker.elastic.co/beats/filebeat:8.12.0
