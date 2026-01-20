@@ -14,7 +14,7 @@ def init_database():
     """
     Initialize the database on startup:
     - If database doesn't exist: create tables
-    - If database exists but is empty: fill with seed data
+    - If database exists but is empty: fill with seeded data
     """
     from v1.Database.database_creation import create_database
     from v1.Database.database_logic import get_connection
