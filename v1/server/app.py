@@ -17,7 +17,7 @@ sys.stdout.flush()
 
 # Import routers
 print("Starting imports...")
-from v1.server.routers import auth, parking_lots, reservations, vehicles, payments
+from v1.server.routers import auth, parking_lots, reservations, vehicles, payments, admin
 from v1.server.logging_config import log_event
 
 print("All routers imported successfully")
