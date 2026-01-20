@@ -26,7 +26,7 @@ jobs:
 
       - name: Run Unit Tests
         run: |
-          pytest v2/unittests 
+          pytest v1/tests 
 
   e2e-tests:
     needs: test
