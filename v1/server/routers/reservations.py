@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from typing import Optional, Literal
 from ..deps import require_session
 from ...Database.database_logic import get_db, get_parking_lot_by_id, get_user_id_by_username
+from ..logging_config import log_event
 import csv
 import io
 import sqlite3
@@ -42,6 +43,8 @@ def monthly_overview(
         )
     user_id = get_user_id_by_username(con, user.get("username"))
     if not user_id:
+        log_event("ERROR", event="monthly_overview_failed",
+                  message="user_not_found")
         raise HTTPException(400, detail="User not found")
     # Get all reservations for user
     rows = con.execute(
@@ -114,16 +117,26 @@ def create_reservation(payload: ReservationIn, user = Depends(require_session), 
     #Get user ID
     user_id = get_user_id_by_username(con, user.get("username"))
     if not user_id:
+        log_event("ERROR", event="reservation_create_failed",
+                  message="user_not_found")
         raise HTTPException(400, detail="User not found")
 
     #Check if parking lot exists
     parkinglot = get_parking_lot_by_id(con, payload.parking_lot_id)
     if not parkinglot:
+        log_event("WARNING", event="reservation_create_failed",
+                  username=user.get("username"),
+                  message="parking_lot_not_found",
+                  parking_lot_id=payload.parking_lot_id)
         raise HTTPException(404, detail="Parking lot not found")
 
     #Check if vehicle exists
     vehicle = con.execute("SELECT id FROM vehicles WHERE id = ?", (payload.vehicle_id,)).fetchone()
     if not vehicle:
+        log_event("WARNING", event="reservation_create_failed",
+                  username=user.get("username"),
+                  message="vehicle_not_found",
+                  vehicle_id=payload.vehicle_id)
         raise HTTPException(404, detail="Vehicle not found")
 
     created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -176,11 +189,18 @@ def get_reservation(rid: str, user = Depends(require_session), con: sqlite3.Conn
 
     row = con.execute("SELECT * FROM reservations WHERE id = ?", (rid,)).fetchone()
     if not row:
+        log_event("WARNING", event="reservation_get_failed",
+                  message="reservation_not_found",
+                  reservation_id=rid)
         raise HTTPException(404, detail="Reservation not found")
 
     r = dict(row)
     #check admin
     if user.get("role") != "ADMIN" and r.get("user_id") != user_id:
+        log_event("WARNING", event="reservation_get_failed",
+                  username=user.get("username"),
+                  message="access_denied",
+                  reservation_id=rid)
         raise HTTPException(403, detail="Access denied")
 
     return r
@@ -194,11 +214,18 @@ def update_reservation_route(rid: str, payload: UpdateReservationIn, user = Depe
 
     row = con.execute("SELECT * FROM reservations WHERE id = ?", (rid,)).fetchone()
     if not row:
+        log_event("WARNING", event="reservation_update_failed",
+                  message="reservation_not_found",
+                  reservation_id=rid)
         raise HTTPException(404, detail="Reservation not found")
 
     r = dict(row)
     # Check ownership
     if user.get("role") != "ADMIN" and r.get("user_id") != user_id:
+        log_event("WARNING", event="reservation_update_failed",
+                  username=user.get("username"),
+                  message="access_denied",
+                  reservation_id=rid)
         raise HTTPException(403, detail="Access denied")
 
     # Build update query dynamically for provided fields
@@ -238,11 +265,18 @@ def delete_reservation_route(rid: str, user = Depends(require_session), con: sql
 
     row = con.execute("SELECT * FROM reservations WHERE id = ?", (rid,)).fetchone()
     if not row:
+        log_event("WARNING", event="reservation_delete_failed",
+                  message="reservation_not_found",
+                  reservation_id=rid)
         raise HTTPException(404, detail="Reservation not found")
 
     r = dict(row)
     # Check ownership
     if user.get("role") != "ADMIN" and r.get("user_id") != user_id:
+        log_event("WARNING", event="reservation_delete_failed",
+                  username=user.get("username"),
+                  message="access_denied",
+                  reservation_id=rid)
         raise HTTPException(403, detail="Access denied")
 
     # Delete reservation

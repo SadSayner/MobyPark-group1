@@ -9,6 +9,7 @@ from ...storage_utils import load_json, save_user_data
 from ...session_manager import add_session, remove_session, get_session
 from ..deps import require_session
 from ...Database.database_logic import get_db, get_users_by_username, get_users_by_email, update_user
+from ..logging_config import log_event
 from ..validation.validation import (
     is_valid_username,
     is_valid_password,
@@ -75,31 +76,52 @@ class UpdateProfileIn(BaseModel):
 @router.post("/register")
 def register(payload: RegisterBody, con: sqlite3.Connection = Depends(get_db)):
     if not is_valid_username(payload.username):
+        log_event("WARNING", event="register_failed",
+                  message="invalid_username",
+                  username=payload.username)
         raise HTTPException(
             status_code=400,
             detail="Invalid username. Must be 8-10 characters, start with a letter or underscore, and contain only letters, numbers, underscores, apostrophes, or periods."
         )
 
     if not is_valid_password(payload.password):
+        log_event("WARNING", event="register_failed",
+                  message="invalid_password",
+                  username=payload.username)
         raise HTTPException(
             status_code=400,
             detail="Invalid password. Must be 12-30 characters and contain at least one lowercase letter, one uppercase letter, one digit, and one special character."
         )
 
     if not is_valid_email(payload.email):
+        log_event("WARNING", event="register_failed",
+                  message="invalid_email",
+                  username=payload.username,
+                  email=payload.email)
         raise HTTPException(status_code=400, detail="Invalid email format.")
 
     if not is_valid_phone(payload.phone):
+        log_event("WARNING", event="register_failed",
+                  message="invalid_phone",
+                  username=payload.username,
+                  phone=payload.phone)
         raise HTTPException(
             status_code=400,
             detail="Invalid phone number. Must be 7-15 digits with optional separators (+, -, spaces, parentheses)."
         )
 
     if payload.role and not is_valid_role(payload.role):
+        log_event("WARNING", event="register_failed",
+                  message="invalid_role",
+                  username=payload.username,
+                  role=payload.role)
         raise HTTPException(status_code=400, detail="Invalid role. Must be 'USER' or 'ADMIN'.")
 
     existing_user = get_users_by_username(con, payload.username)
     if existing_user:
+        log_event("WARNING", event="register_failed",
+                  message="username_already_taken",
+                  username=payload.username)
         raise HTTPException(status_code=409, detail="Username already taken")
 
     con.execute(
@@ -107,14 +129,21 @@ def register(payload: RegisterBody, con: sqlite3.Connection = Depends(get_db)):
         (payload.username, hash_password(payload.password), payload.name, payload.email, payload.phone, (payload.role or "USER").upper()),
     )
     con.commit()
+    log_event("INFO", event="register_success",
+              message="user_registered",
+              username=payload.username)
     return {"message": "User created"}
 
 @router.post("/login")
 def login(payload: LoginBody, con: sqlite3.Connection = Depends(get_db)):
     if not payload.password:
+        log_event("WARNING", event="login_failed",
+                  message="password_missing")
         raise HTTPException(status_code=400, detail="Password is required")
 
     if not payload.email and not payload.username:
+        log_event("WARNING", event="login_failed",
+                  message="email_or_username_missing")
         raise HTTPException(status_code=400, detail="Email or username is required")
 
     # Try to find user by email first, then by username
@@ -141,14 +170,23 @@ def login(payload: LoginBody, con: sqlite3.Connection = Depends(get_db)):
 
             session_token = str(uuid.uuid4())
             add_session(session_token, {"id": user.id, "username": user.username, "name": user.name, "role": user.role})
+            log_event("INFO", event="login_success",
+                      message="user_logged_in",
+                      username=user.username)
             return {"message": "Login successful", "session_token": session_token}
 
+    log_event("WARNING", event="login_failed",
+              message="invalid_credentials",
+              identifier=payload.email or payload.username)
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
 @router.get("/profile")
 def profile(user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
     db_user = get_users_by_username(con, user["username"])
     if not db_user:
+        log_event("ERROR", event="profile_get_failed",
+                  message="user_not_found",
+                  username=user["username"])
         raise HTTPException(status_code=404, detail="User not found")
     return {"username": db_user.username, "name": db_user.name, "role": db_user.role}
     
@@ -156,10 +194,16 @@ def profile(user = Depends(require_session), con: sqlite3.Connection = Depends(g
 def update_profile(updates: UpdateProfileIn, user = Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
     db_user = get_users_by_username(con, user["username"])
     if not db_user:
+        log_event("ERROR", event="profile_update_failed",
+                  message="user_not_found",
+                  username=user["username"])
         raise HTTPException(status_code=404, detail="User not found")
 
     if updates.password is not None:
         if not is_valid_password(updates.password):
+            log_event("WARNING", event="profile_update_failed",
+                      message="invalid_password",
+                      username=user["username"])
             raise HTTPException(
                 status_code=400,
                 detail="Invalid password. Must be 12-30 characters and contain at least one lowercase letter, one uppercase letter, one digit, and one special character."
@@ -167,10 +211,18 @@ def update_profile(updates: UpdateProfileIn, user = Depends(require_session), co
 
     if updates.email is not None:
         if not is_valid_email(updates.email):
+            log_event("WARNING", event="profile_update_failed",
+                      message="invalid_email",
+                      username=user["username"],
+                      email=updates.email)
             raise HTTPException(status_code=400, detail="Invalid email format.")
 
     if updates.phone is not None:
         if not is_valid_phone(updates.phone):
+            log_event("WARNING", event="profile_update_failed",
+                      message="invalid_phone",
+                      username=user["username"],
+                      phone=updates.phone)
             raise HTTPException(
                 status_code=400,
                 detail="Invalid phone number. Must be 7-15 digits with optional separators (+, -, spaces, parentheses)."
@@ -178,6 +230,10 @@ def update_profile(updates: UpdateProfileIn, user = Depends(require_session), co
 
     if updates.role is not None:
         if not is_valid_role(updates.role):
+            log_event("WARNING", event="profile_update_failed",
+                      message="invalid_role",
+                      username=user["username"],
+                      role=updates.role)
             raise HTTPException(status_code=400, detail="Invalid role. Must be 'USER' or 'ADMIN'.")
 
     update_dict = {}
@@ -194,13 +250,25 @@ def update_profile(updates: UpdateProfileIn, user = Depends(require_session), co
 
     success = update_user(con, user["username"], update_dict)
     if not success:
+        log_event("ERROR", event="profile_update_failed",
+                  message="database_update_failed",
+                  username=user["username"])
         raise HTTPException(status_code=500, detail="Failed to update user")
 
+    log_event("INFO", event="profile_update_success",
+              message="profile_updated",
+              username=user["username"])
     return {"message": "User updated successfully"}
 
 @router.get("/logout")
-def logout(authorization: Optional[str] = Header(default=None)): 
+def logout(authorization: Optional[str] = Header(default=None)):
     if authorization and get_session(authorization):
+        session = get_session(authorization)
         remove_session(authorization)
+        log_event("INFO", event="logout_success",
+                  message="user_logged_out",
+                  username=session.get("username"))
         return {"message": "User logged out"}
+    log_event("WARNING", event="logout_failed",
+              message="invalid_session_token")
     raise HTTPException(400, detail="Invalid session token")

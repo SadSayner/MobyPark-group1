@@ -5,6 +5,7 @@ import sqlite3
 
 from ..deps import require_admin
 from ...Database.database_logic import get_db
+from ..logging_config import log_event
 
 router = APIRouter()
 
@@ -16,6 +17,9 @@ def get_admin_dashboard(admin=Depends(require_admin), con: sqlite3.Connection = 
 
     Returns statistics about users, parking lots, sessions, vehicles, and payments.
     """
+    log_event("INFO", event="admin_dashboard_accessed",
+              message="admin_accessed_dashboard",
+              username=admin.get("username"))
     dashboard_data = {}
 
     # === USER STATISTICS ===
@@ -146,6 +150,9 @@ def list_all_users(admin=Depends(require_admin), con: sqlite3.Connection = Depen
 
     Returns user information (excluding passwords)
     """
+    log_event("INFO", event="admin_users_list_accessed",
+              message="admin_accessed_user_list",
+              username=admin.get("username"))
     users = con.execute("""
         SELECT
             id,
@@ -188,7 +195,17 @@ def get_user_details(user_id: int, admin=Depends(require_admin), con: sqlite3.Co
     """, (user_id,)).fetchone()
 
     if not user:
+        log_event("WARNING", event="admin_user_details_failed",
+                  message="user_not_found",
+                  admin_username=admin.get("username"),
+                  target_user_id=user_id)
         raise HTTPException(404, detail="User not found")
+
+    log_event("INFO", event="admin_user_details_accessed",
+              message="admin_accessed_user_details",
+              admin_username=admin.get("username"),
+              target_user_id=user_id,
+              target_username=user["username"])
 
     user_data = dict(user)
 
@@ -237,6 +254,9 @@ def get_parking_lot_statistics(admin=Depends(require_admin), con: sqlite3.Connec
 
     Includes occupancy, sessions, and revenue
     """
+    log_event("INFO", event="admin_parking_stats_accessed",
+              message="admin_accessed_parking_lot_statistics",
+              username=admin.get("username"))
     parking_lots = con.execute("""
         SELECT
             pl.*,
@@ -267,6 +287,9 @@ def get_active_sessions(admin=Depends(require_admin), con: sqlite3.Connection = 
     """
     Get all currently active parking sessions
     """
+    log_event("INFO", event="admin_active_sessions_accessed",
+              message="admin_accessed_active_sessions",
+              username=admin.get("username"))
     sessions = con.execute("""
         SELECT
             s.*,
@@ -293,6 +316,9 @@ def get_revenue_summary(admin=Depends(require_admin), con: sqlite3.Connection = 
     """
     Get revenue summary broken down by parking lot and time period
     """
+    log_event("INFO", event="admin_revenue_summary_accessed",
+              message="admin_accessed_revenue_summary",
+              username=admin.get("username"))
     # Revenue by parking lot
     revenue_by_lot = con.execute("""
         SELECT
@@ -337,6 +363,9 @@ def get_system_health(admin=Depends(require_admin), con: sqlite3.Connection = De
 
     Checks for potential issues like unpaid sessions, pending payments, etc.
     """
+    log_event("INFO", event="admin_system_health_accessed",
+              message="admin_accessed_system_health",
+              username=admin.get("username"))
     # Sessions without payment
     unpaid_completed_sessions = con.execute("""
         SELECT COUNT(*) as count
