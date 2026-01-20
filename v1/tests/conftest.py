@@ -64,9 +64,26 @@ def _clean_db_side_effects_for_tests():
 
     con = get_connection()
     try:
-        # Payments reference sessions, so delete payments first.
+        # Delete in proper order to respect foreign key constraints
+        # 1. Delete payments first (references sessions)
         con.execute("DELETE FROM payments")
+
+        # 2. Delete reservations (references users, parking_lots, vehicles)
+        con.execute("DELETE FROM reservations")
+
+        # 3. Delete sessions (references parking_lots, users, vehicles)
         con.execute("DELETE FROM sessions")
+
+        # 4. Delete vehicles (referenced by sessions and reservations)
+        con.execute("DELETE FROM vehicles WHERE license_plate LIKE 'TEST-%'")
+
+        # 5. Delete parking lots (referenced by sessions and reservations)
+        con.execute("DELETE FROM parking_lots WHERE name LIKE '%Pytest%' OR name LIKE '%Test%'")
+
+        # 6. Delete test users last (referenced by sessions, reservations, vehicles)
+        con.execute("DELETE FROM users WHERE email IN ('pytest_user@example.com', 'pytest_admin@example.com')")
+        con.execute("DELETE FROM users WHERE username IN ('pyt_user1', 'pyt_adm01')")
+
         con.commit()
     finally:
         try:
@@ -78,24 +95,31 @@ def _clean_db_side_effects_for_tests():
 @pytest.fixture(scope="function")
 def user_token(test_client):
     """Register and login a test user, return session token"""
-    # Try to register (might fail if already exists)
+    from ..Database.database_logic import get_connection
+
+    # Clean up any existing test user first to ensure clean state for each test
+    con = get_connection()
+    try:
+        con.execute("DELETE FROM users WHERE email = ? OR username = ?",
+                   (TEST_USER["email"], TEST_USER["username"]))
+        con.commit()
+    finally:
+        con.close()
+
+    # Register the user
     reg_response = test_client.post("/auth/register", json=TEST_USER)
 
-    # If registration failed due to existing user, that's OK
-    # We just need to be able to login
-    if reg_response.status_code not in [200, 409]:
-        # Unexpected error
-        raise Exception(f"Registration failed with unexpected code: {reg_response.status_code}, {reg_response.json()}")
+    if reg_response.status_code != 200:
+        raise Exception(f"Registration failed: {reg_response.status_code}, {reg_response.json()}")
 
     # Login
     response = test_client.post("/auth/login", json={
-        "username": TEST_USER["username"],
+        "email": TEST_USER["email"],
         "password": TEST_USER["password"]
     })
 
-    # If login fails, the user might exist with different password - show helpful error
     if response.status_code != 200:
-        raise Exception(f"Login failed: {response.status_code}. User might exist with different password. Clean database with: DELETE FROM users WHERE username='pytest_user'")
+        raise Exception(f"Login failed: {response.status_code}, {response.json()}")
 
     return response.json()["session_token"]
 
@@ -103,21 +127,31 @@ def user_token(test_client):
 @pytest.fixture(scope="module")
 def admin_token(test_client):
     """Register and login an admin user, return session token"""
-    # Try to register (might fail if already exists)
+    from ..Database.database_logic import get_connection
+
+    # Clean up any existing admin user first
+    con = get_connection()
+    try:
+        con.execute("DELETE FROM users WHERE email = ? OR username = ?",
+                   (TEST_ADMIN["email"], TEST_ADMIN["username"]))
+        con.commit()
+    finally:
+        con.close()
+
+    # Register the admin
     reg_response = test_client.post("/auth/register", json=TEST_ADMIN)
 
-    # If registration failed due to existing user, that's OK
-    if reg_response.status_code not in [200, 409]:
-        raise Exception(f"Admin registration failed with unexpected code: {reg_response.status_code}, {reg_response.json()}")
+    if reg_response.status_code != 200:
+        raise Exception(f"Admin registration failed: {reg_response.status_code}, {reg_response.json()}")
 
     # Login
     response = test_client.post("/auth/login", json={
-        "username": TEST_ADMIN["username"],
+        "email": TEST_ADMIN["email"],
         "password": TEST_ADMIN["password"]
     })
 
     if response.status_code != 200:
-        raise Exception(f"Admin login failed: {response.status_code}. User might exist with different password. Clean database with: DELETE FROM users WHERE username='pytest_admin'")
+        raise Exception(f"Admin login failed: {response.status_code}, {response.json()}")
 
     return response.json()["session_token"]
 
@@ -125,6 +159,16 @@ def admin_token(test_client):
 @pytest.fixture(scope="module")
 def parking_lot_id(test_client, admin_token):
     """Create a test parking lot and return its ID"""
+    from ..Database.database_logic import get_connection
+
+    # Clean up any existing test parking lot first
+    con = get_connection()
+    try:
+        con.execute("DELETE FROM parking_lots WHERE name = 'Pytest Parking Lot'")
+        con.commit()
+    finally:
+        con.close()
+
     response = test_client.post("/parking-lots",
         headers={"Authorization": admin_token},
         json={
