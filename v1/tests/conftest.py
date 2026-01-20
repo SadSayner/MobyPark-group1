@@ -3,6 +3,22 @@ Shared fixtures for all tests
 """
 import pytest
 from fastapi.testclient import TestClient
+import os
+import sqlite3
+from pathlib import Path
+import tempfile
+import uuid
+
+
+# Use an isolated sqlite DB for tests. CI starts from a clean workspace and
+# local dev machines may have a persisted (or corrupted) DB file.
+os.environ.setdefault(
+    "MOBYPARK_DB_PATH",
+    os.path.join(tempfile.gettempdir(), f"mobipark_pytest_{uuid.uuid4().hex}.db"),
+)
+# Keep tests fast/stable when running without Docker services.
+os.environ.setdefault("MOBYPARK_SKIP_SEED", "1")
+os.environ.setdefault("MOBYPARK_DISABLE_ELASTIC_LOGS", "1")
 
 # Prevent tests from making real network calls to Elasticsearch.
 # The production logger writes to Elasticsearch, but in unit/integration tests
@@ -60,7 +76,36 @@ def _clean_db_side_effects_for_tests():
     We only clear tables that are frequently mutated by tests and can cause
     order-dependent behavior (e.g., payments/session IDs).
     """
+    # CI often starts with an empty sqlite file. Locally, developers may already
+    # have a persisted DB (or a corrupted one). Ensure the schema exists before
+    # running cleanup.
+    from ..Database.database_creation import create_database
     from ..Database.database_logic import get_connection
+
+    db_path = os.getenv("MOBYPARK_DB_PATH") or os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "..",
+        "Database",
+        "MobyPark.db",
+    )
+
+    db_file = Path(db_path)
+    db_file.parent.mkdir(parents=True, exist_ok=True)
+
+    # If the DB file exists but is invalid/corrupted, recreate it.
+    if db_file.exists():
+        try:
+            with sqlite3.connect(db_path) as _con:
+                integrity = _con.execute("PRAGMA integrity_check;").fetchone()[0]
+            if integrity != "ok":
+                raise sqlite3.DatabaseError(integrity)
+        except sqlite3.DatabaseError:
+            try:
+                db_file.unlink()
+            except Exception:
+                pass
+
+    create_database(db_path=db_path)
 
     con = get_connection()
     try:
