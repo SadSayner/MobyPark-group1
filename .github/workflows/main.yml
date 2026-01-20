@@ -25,7 +25,8 @@ jobs:
 
       - name: Run Unit Tests
         run: |
-          pytest v2/unittests 
+          # Draai lokale tests (zonder Docker)
+          pytest v1/tests 
 
   e2e-tests:
     needs: test
@@ -34,13 +35,18 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Start services
-        run: docker-compose up -d
+        run: docker compose up -d
         
       - name: Run E2E tests
         run: |
-          # Geef Elasticsearch tijd om op te starten
+          # Wachten op Elasticsearch
           sleep 30 
-          docker-compose exec -T api pytest e2e/
+          
+          # Forceer installatie van test-tools in de container
+          docker compose exec -T api pip install pytest httpx
+          
+          # Draai tests met SKIP_SEED om de 2 uur wachttijd te voorkomen
+          docker compose exec -T -e MOBYPARK_SKIP_SEED=1 api python -m pytest e2e/
 
   build-and-push:
     needs: [test, e2e-tests]

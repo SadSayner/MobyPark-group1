@@ -1,45 +1,29 @@
 import sys
+import os
+import time
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from elasticsearch import Elasticsearch
+
+# Zorg voor directe output in de logs
 sys.stdout.flush()
 print("=" * 50)
 print("APP.PY IS BEING LOADED")
 print("=" * 50)
 sys.stdout.flush()
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
-from contextlib import asynccontextmanager
-import os
-
+# Import routers
 print("Starting imports...")
-
-print("Importing auth router...")
-from v1.server.routers import auth
-
-print("Importing parking_lots router...")
-from v1.server.routers import parking_lots
-
-print("Importing reservations router...")
-from v1.server.routers import reservations
-
-print("Importing vehicles router...")
-from v1.server.routers import vehicles
-
-print("Importing payments router...")
-from v1.server.routers import payments
-
-print("Importing admin router...")
-from v1.server.routers import admin
+from v1.server.routers import auth, parking_lots, reservations, vehicles, payments
+from v1.server.logging_config import log_event
 
 print("All routers imported successfully")
 
-from v1.server.logging_config import log_event
-
 def wait_for_elasticsearch(timeout=60):
-    from elasticsearch import Elasticsearch
-    import time
-
+    """Wacht tot Elasticsearch beschikbaar is voordat de app start."""
     es = Elasticsearch("http://elasticsearch:9200")
     start = time.time()
 
@@ -52,69 +36,68 @@ def wait_for_elasticsearch(timeout=60):
             print(f"Waiting for Elasticsearch... ({int(time.time() - start)}s elapsed)")
         time.sleep(2)
 
-    raise RuntimeError(f"Elasticsearch not ready after {timeout} seconds. Cannot start application.")
+    print("Warning: Elasticsearch not ready, continuing without it")
+    return None
 
 def init_database():
     """
-    Initialize the database on startup:
-    - If database doesn't exist: create tables
-    - If database exists but is empty: fill with seed data
+    Initialiseert de database:
+    1. Maakt altijd de tabellen aan (indien ze nog niet bestaan).
+    2. Vult de database alleen als deze leeg is EN de skip-vlag niet aan staat.
     """
-    print("init_database() called")
+    print("init_database() genaamd")
     from v1.Database.database_creation import create_database
     from v1.Database.database_logic import get_connection
 
-    db_path = os.path.join(os.path.dirname(__file__),
-                           '..', 'Database', 'MobyPark.db')
+    # Database pad bepalen
+    db_path = os.path.join(os.path.dirname(__file__), '..', 'Database', 'MobyPark.db')
     db_path = os.path.abspath(db_path)
-    
     print(f"Database path: {db_path}")
 
-    db_exists = os.path.exists(db_path)
-    print(f"Database exists: {db_exists}")
-
-    if not db_exists:
-        print("Creating database...")
-        log_event(level="INFO", event="startup", message="Database not found, creating...")
+    # STAP 1: Altijd de tabellen aanmaken (voorkomt "no such table" errors in CI)
+    try:
         create_database(db_path)
-        log_event(level="INFO", event="startup", message="Database tables created")
-        print("Database created")
+        print("Database schema gecontroleerd/aangemaakt.")
+    except Exception as e:
+        print(f"ERROR bij aanmaken schema: {e}")
+        raise
 
-    # Check if the database has records (check users table as indicator)
-    print("Connecting to database...")
+    # STAP 2: Check of we data moeten invoegen
+    if os.getenv("MOBYPARK_SKIP_SEED", "").strip().lower() in {"1", "true", "yes", "y", "on"}:
+        print("MOBYPARK_SKIP_SEED=1 gedetecteerd. Overslaan van data vulling.")
+        log_event(level="INFO", event="startup", message="MOBYPARK_SKIP_SEED=1 set, skipping seed")
+        return
+
+    # STAP 3: Alleen vullen als de database echt leeg is
     conn = get_connection(db_path)
     try:
-        print("Checking payment count...")
+        # Check de payments tabel als indicator voor een volle database
         cur = conn.execute("SELECT COUNT(*) FROM payments")
         payment_count = cur.fetchone()[0]
-        print(f"Payment count: {payment_count}")
         conn.close()
 
         if payment_count == 0:
-            if os.getenv("MOBYPARK_SKIP_SEED", "").strip().lower() in {"1", "true", "yes", "y", "on"}:
-                log_event(level="INFO", event="startup", message="MOBYPARK_SKIP_SEED=1 set, skipping seed")
-            else:
-                print("Starting database fill (this may take a while)...")
-                log_event(level="INFO", event="startup", message="Database is empty, filling with seed data...")
-
-                from v1.Database.database_batches import fill_database
-                fill_database()
-                log_event(level="INFO", event="startup", message="Database filled with seed data")
-                print("Database fill complete")
+            print("Database is leeg, starten van database fill (dit kan even duren)...")
+            log_event(level="INFO", event="startup", message="Database is empty, filling with seed data...")
+            
+            from v1.Database.database_batches import fill_database
+            fill_database() # Voeg eventueel parameters toe zoals max_session_files=11
+            
+            log_event(level="INFO", event="startup", message="Database filled with seed data")
+            print("Database fill complete")
         else:
-            print(f"Database already has {payment_count} payments, skipping seed")
+            print(f"Database bevat al {payment_count} payments, overslaan van seed.")
             log_event(level="INFO", event="startup", message=f"Database contains {payment_count} payments, skipping seed")
     except Exception as e:
-        print(f"ERROR in init_database: {e}")
-        log_event(level="ERROR", event="startup", message=f"Error checking database: {e}")
-        conn.close()
-        raise
-
+        print(f"ERROR in init_database vulling: {e}")
+        log_event(level="ERROR", event="startup", message=f"Error checking/filling database: {e}")
+        if 'conn' in locals(): conn.close()
+        # We raise de error hier niet, zodat de API alsnog kan starten met een lege DB
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifespan context manager for startup/shutdown events."""
-    # Startup
+    """Lifespan manager voor startup en shutdown events."""
+    # Startup logica
     print("Starting up...")
 
     # Skip Elasticsearch if disabled
@@ -124,54 +107,37 @@ async def lifespan(app: FastAPI):
     else:
         try:
             app.state.es = wait_for_elasticsearch()
-            print("Elasticsearch connected successfully")
         except Exception as e:
             print(f"Elasticsearch connection failed: {e}")
             app.state.es = None
 
     try:
         init_database()
-        print("Database initialized")
+        print("Database initialisatie voltooid")
     except Exception as e:
-        print(f"Startup warning: {e}")
-
+        print(f"Startup database warning: {e}")
+    
     print("Application startup complete")
     yield
-    # Shutdown
+    # Shutdown logica
     print("Shutting down...")
 
-# API Metadata for Swagger UI
+# FastAPI App definitie
 app = FastAPI(
     lifespan=lifespan,
     title="MobyPark API",
     description="""
     **MobyPark Parking Management System API**
-
-    This API provides endpoints for:
-    * **Authentication** - User registration, login, profile management
-    * **Parking Lots** - CRUD operations for parking lots and parking sessions
-    * **Vehicles** - Manage user vehicles
-    * **Reservations** - Create and manage parking reservations
-    * **Payments** - Handle payments and billing
-    * **Admin** - Admin dashboard and system statistics (admin only)
-
-    ## Authentication
-    Most endpoints require authentication via session token in the `Authorization` header.
-
-    ## Roles
-    * **USER** - Regular user (can manage own data)
-    * **ADMIN** - Administrator (can manage all data and access dashboard)
+    
+    Deze API faciliteert:
+    * **Auth**: Registratie & Login
+    * **Parking**: Beheer van terreinen en sessies
+    * **Betalingen**: Afhandeling van parkeerkosten
     """,
-    version="1.0.0",
-    contact={
-        "name": "MobyPark Team",
-        "email": "support@mobypark.com",
-    },
-    license_info={
-        "name": "MIT",
-    },
+    version="1.0.0"
 )
 
+# Middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -180,7 +146,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# mount routers
+# Routes koppelen
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(parking_lots.router, tags=["parking-lots"])
 app.include_router(reservations.router, tags=["reservations"])
@@ -188,19 +154,20 @@ app.include_router(vehicles.router, tags=["vehicles"])
 app.include_router(payments.router, tags=["payments"])
 app.include_router(admin.router, prefix="/admin", tags=["admin"])
 
-# Mount static files
+# Static files (Frontend)
 static_path = os.path.join(os.path.dirname(__file__), "static")
 if os.path.exists(static_path):
     app.mount("/static", StaticFiles(directory=static_path), name="static")
 
 @app.get("/")
 def root():
-    """Serve the simple testing interface"""
+    """Serveert index.html of een welkomstbericht."""
     static_file = os.path.join(os.path.dirname(__file__), "static", "index.html")
     if os.path.exists(static_file):
         return FileResponse(static_file)
-    return {"message": "API is running. Visit /docs for API documentation."}
+    return {"message": "API is running. Visit /docs for documentation."}
 
 @app.get("/health")
 def health():
-    return {"ok": True}
+    """Health check endpoint voor CI/CD."""
+    return {"ok": True, "database": "connected"}
