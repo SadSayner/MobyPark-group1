@@ -33,7 +33,7 @@ print("All routers imported successfully")
 
 from v1.server.logging_config import log_event
 
-def wait_for_elasticsearch(timeout=30):
+def wait_for_elasticsearch(timeout=60):
     from elasticsearch import Elasticsearch
     import time
 
@@ -46,11 +46,10 @@ def wait_for_elasticsearch(timeout=30):
                 print("Elasticsearch ready")
                 return es
         except Exception:
-            pass
+            print(f"Waiting for Elasticsearch... ({int(time.time() - start)}s elapsed)")
         time.sleep(2)
 
-    print("Elasticsearch not ready, continuing without it")
-    return None
+    raise RuntimeError(f"Elasticsearch not ready after {timeout} seconds. Cannot start application.")
 
 def init_database():
     """
@@ -118,11 +117,7 @@ async def lifespan(app: FastAPI):
     # Startup
     print("Starting up...")
     app.state.es = wait_for_elasticsearch()
-    
-    if app.state.es:
-        print("Elasticsearch connected successfully")
-    else:
-        print("Warning: Elasticsearch not available")
+    print("Elasticsearch connected successfully")
     
     try:
         init_database()
