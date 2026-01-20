@@ -1412,7 +1412,7 @@ def fill_database(debug_mode=False, max_session_files=None, max_payments=None):
     print("Optimizing database for bulk inserts...")
     conn.execute("PRAGMA journal_mode = WAL;")  # Write-Ahead Logging
     conn.execute("PRAGMA synchronous = NORMAL;")  # Sneller, nog steeds veilig
-    conn.execute("PRAGMA cache_size = -8000;")  # 8MB cache (verlaagd voor Docker)
+    conn.execute("PRAGMA cache_size = -64000;")  # 64MB cache
     conn.execute("PRAGMA temp_store = MEMORY;")  # Temp tables in memory
     conn.commit()
 
