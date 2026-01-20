@@ -408,6 +408,7 @@ def my_billing(user = Depends(require_session), con: sqlite3.Connection = Depend
         paid_row = con.execute("SELECT COALESCE(SUM(amount),0) as paid FROM payments WHERE session_id = ?", (sid,)).fetchone()
         paid = paid_row["paid"] if paid_row else 0
         data.append({
+            "session_id": sid,
             "session": {"licenseplate": licenseplate, "started": session_obj["started"], "stopped": session_obj["stopped"], "hours": hours, "days": days},
             "parking": parking,
             "amount": amount,
@@ -456,6 +457,7 @@ def user_billing(user_name: str, admin = Depends(require_admin), con: sqlite3.Co
         paid_row = con.execute("SELECT COALESCE(SUM(amount),0) as paid FROM payments WHERE session_id = ?", (sid,)).fetchone()
         paid = paid_row["paid"] if paid_row else 0
         data.append({
+            "session_id": sid,
             "session": {"licenseplate": licenseplate, "started": session_obj["started"], "stopped": session_obj["stopped"], "hours": hours, "days": days},
             "parking": parking,
             "amount": amount,

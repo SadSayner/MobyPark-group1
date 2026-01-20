@@ -29,6 +29,9 @@ from v1.server.routers import vehicles
 print("Importing payments router...")
 from v1.server.routers import payments
 
+print("Importing admin router...")
+from v1.server.routers import admin
+
 print("All routers imported successfully")
 
 from v1.server.logging_config import log_event
@@ -113,15 +116,25 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup/shutdown events."""
     # Startup
     print("Starting up...")
-    app.state.es = wait_for_elasticsearch()
-    print("Elasticsearch connected successfully")
-    
+
+    # Skip Elasticsearch if disabled
+    if os.getenv("MOBYPARK_DISABLE_ELASTIC_LOGS", "").strip().lower() in {"1", "true", "yes", "y", "on"}:
+        print("Elasticsearch disabled via MOBYPARK_DISABLE_ELASTIC_LOGS")
+        app.state.es = None
+    else:
+        try:
+            app.state.es = wait_for_elasticsearch()
+            print("Elasticsearch connected successfully")
+        except Exception as e:
+            print(f"Elasticsearch connection failed: {e}")
+            app.state.es = None
+
     try:
         init_database()
         print("Database initialized")
     except Exception as e:
         print(f"Startup warning: {e}")
-    
+
     print("Application startup complete")
     yield
     # Shutdown
@@ -140,13 +153,14 @@ app = FastAPI(
     * **Vehicles** - Manage user vehicles
     * **Reservations** - Create and manage parking reservations
     * **Payments** - Handle payments and billing
+    * **Admin** - Admin dashboard and system statistics (admin only)
 
     ## Authentication
     Most endpoints require authentication via session token in the `Authorization` header.
 
     ## Roles
     * **USER** - Regular user (can manage own data)
-    * **ADMIN** - Administrator (can manage all data)
+    * **ADMIN** - Administrator (can manage all data and access dashboard)
     """,
     version="1.0.0",
     contact={
@@ -172,6 +186,7 @@ app.include_router(parking_lots.router, tags=["parking-lots"])
 app.include_router(reservations.router, tags=["reservations"])
 app.include_router(vehicles.router, tags=["vehicles"])
 app.include_router(payments.router, tags=["payments"])
+app.include_router(admin.router, prefix="/admin", tags=["admin"])
 
 # Mount static files
 static_path = os.path.join(os.path.dirname(__file__), "static")

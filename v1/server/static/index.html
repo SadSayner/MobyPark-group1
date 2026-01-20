@@ -233,6 +233,7 @@
                 <button class="tab" onclick="showTab('vehicles')">🚗 Vehicles</button>
                 <button class="tab" onclick="showTab('reservations')">📅 Reservations</button>
                 <button class="tab" onclick="showTab('payments')">💳 Payments</button>
+                <button class="tab" id="adminTab" onclick="showTab('admin')" style="display: none;">👑 Admin Dashboard</button>
             </div>
 
             <!-- Auth Tab -->
@@ -435,6 +436,25 @@
 
                 <div id="paymentsResponse"></div>
             </div>
+
+            <!-- Admin Dashboard Tab -->
+            <div id="admin" class="tab-content">
+                <h2>👑 Admin Dashboard</h2>
+                <div class="info-box" style="background: #fff3cd; border-left-color: #ffc107;">
+                    <strong>⚠️ Admin Access:</strong> You have administrator privileges. Handle with care!
+                </div>
+
+                <div class="button-group">
+                    <button class="btn btn-primary" onclick="getAdminDashboard()">📊 Dashboard Overview</button>
+                    <button class="btn btn-secondary" onclick="getAllUsers()">👥 All Users</button>
+                    <button class="btn btn-secondary" onclick="getParkingStats()">🅿️ Parking Stats</button>
+                    <button class="btn btn-secondary" onclick="getActiveSessions()">🔴 Active Sessions</button>
+                    <button class="btn btn-secondary" onclick="getRevenueSummary()">💰 Revenue Summary</button>
+                    <button class="btn btn-secondary" onclick="getSystemHealth()">🏥 System Health</button>
+                </div>
+
+                <div id="adminResponse"></div>
+            </div>
         </div>
     </div>
 
@@ -442,6 +462,7 @@
         const API_BASE = 'http://localhost:8000';
         let token = localStorage.getItem('token');
         let currentUser = localStorage.getItem('username');
+        let userRole = localStorage.getItem('userRole');
 
         // Update auth status on load
         updateAuthStatus();
@@ -449,15 +470,25 @@
         function updateAuthStatus() {
             const statusEl = document.getElementById('authStatus');
             const userInfoEl = document.getElementById('userInfo');
+            const adminTab = document.getElementById('adminTab');
 
             if (token) {
                 statusEl.className = 'auth-status logged-in';
                 statusEl.textContent = '✅ Logged In';
-                userInfoEl.innerHTML = `<p style="margin-top: 10px;"><strong>User:</strong> ${currentUser} | <button class="btn btn-secondary" onclick="logout()" style="padding: 5px 15px; font-size: 14px;">Logout</button></p>`;
+                const roleText = userRole === 'ADMIN' ? ' <span style="color: #ffc107; font-weight: bold;">[ADMIN]</span>' : '';
+                userInfoEl.innerHTML = `<p style="margin-top: 10px;"><strong>User:</strong> ${currentUser}${roleText} | <button class="btn btn-secondary" onclick="logout()" style="padding: 5px 15px; font-size: 14px;">Logout</button></p>`;
+
+                // Show admin tab if user is admin
+                if (userRole === 'ADMIN') {
+                    adminTab.style.display = 'inline-block';
+                } else {
+                    adminTab.style.display = 'none';
+                }
             } else {
                 statusEl.className = 'auth-status logged-out';
                 statusEl.textContent = '🔒 Not Logged In';
                 userInfoEl.innerHTML = '';
+                adminTab.style.display = 'none';
             }
         }
 
@@ -541,8 +572,23 @@
                     currentUser = username;
                     localStorage.setItem('token', token);
                     localStorage.setItem('username', username);
+
+                    // Fetch user profile to get role
+                    try {
+                        const profileResponse = await fetch(`${API_BASE}/auth/profile`, {
+                            headers: { 'authorization': token }
+                        });
+                        const profileData = await profileResponse.json();
+                        if (profileResponse.ok && profileData.role) {
+                            userRole = profileData.role;
+                            localStorage.setItem('userRole', userRole);
+                        }
+                    } catch (e) {
+                        console.error('Failed to fetch profile:', e);
+                    }
+
                     updateAuthStatus();
-                    showResponse('authResponse', { message: 'Login successful!', ...result });
+                    showResponse('authResponse', { message: 'Login successful!', role: userRole, ...result });
                 } else {
                     showResponse('authResponse', result, true);
                 }
@@ -554,8 +600,10 @@
         function logout() {
             token = null;
             currentUser = null;
+            userRole = null;
             localStorage.removeItem('token');
             localStorage.removeItem('username');
+            localStorage.removeItem('userRole');
             updateAuthStatus();
         }
 
@@ -675,7 +723,7 @@
 
             const data = {
                 license_plate: document.getElementById('vehicle_plate').value,
-                make: document.getElementById('vehicle_make').value,
+                make: document.getElementById('vehicle_brand').value,
                 model: document.getElementById('vehicle_model').value,
                 color: document.getElementById('vehicle_color').value,
                 year: parseInt(document.getElementById('vehicle_year').value)
@@ -728,7 +776,76 @@
                 });
 
                 const result = await response.json();
-                showResponse('paymentsResponse', result, !response.ok);
+
+                if (response.ok && Array.isArray(result)) {
+                    // Format payment history nicely
+                    let html = '<div class="response success"><h3>✅ Payment History</h3>';
+
+                    if (result.length === 0) {
+                        html += '<p>No payment history available.</p>';
+                    } else {
+                        html += `
+                            <table style="width: 100%; border-collapse: collapse; margin-top: 15px;">
+                                <thead>
+                                    <tr style="background: #f8f9fa; border-bottom: 2px solid #667eea;">
+                                        <th style="padding: 10px; text-align: left;">Date</th>
+                                        <th style="padding: 10px; text-align: left;">Transaction ID</th>
+                                        <th style="padding: 10px; text-align: right;">Amount</th>
+                                        <th style="padding: 10px; text-align: center;">Status</th>
+                                        <th style="padding: 10px; text-align: left;">Method</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                        `;
+
+                        result.forEach(payment => {
+                            const amount = payment.amount || 0;
+                            const isRefund = amount < 0;
+                            const isCompleted = payment.completed === 1;
+                            const statusColor = isCompleted ? 'green' : 'orange';
+                            const statusText = isCompleted ? '✓ Completed' : '⏳ Pending';
+
+                            html += `
+                                <tr style="border-bottom: 1px solid #ddd;">
+                                    <td style="padding: 10px;">${payment.created_at || 'N/A'}</td>
+                                    <td style="padding: 10px; font-family: monospace; font-size: 12px;">${payment.transaction_id || 'N/A'}</td>
+                                    <td style="padding: 10px; text-align: right; font-weight: bold; color: ${isRefund ? 'green' : 'black'};">
+                                        €${Math.abs(amount).toFixed(2)} ${isRefund ? '(Refund)' : ''}
+                                    </td>
+                                    <td style="padding: 10px; text-align: center; color: ${statusColor}; font-weight: bold;">
+                                        ${statusText}
+                                    </td>
+                                    <td style="padding: 10px;">${payment.t_method || 'N/A'}</td>
+                                </tr>
+                            `;
+                        });
+
+                        html += `
+                                </tbody>
+                            </table>
+                        `;
+
+                        // Calculate totals
+                        const totalPaid = result.filter(p => p.completed === 1 && p.amount > 0).reduce((sum, p) => sum + p.amount, 0);
+                        const totalRefunds = result.filter(p => p.amount < 0).reduce((sum, p) => sum + Math.abs(p.amount), 0);
+                        const pendingPayments = result.filter(p => p.completed === 0).length;
+
+                        html += `
+                            <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                                <h4 style="margin-bottom: 10px;">Summary</h4>
+                                <p><strong>Total Paid:</strong> €${totalPaid.toFixed(2)}</p>
+                                <p><strong>Total Refunds:</strong> €${totalRefunds.toFixed(2)}</p>
+                                <p><strong>Pending Payments:</strong> ${pendingPayments}</p>
+                                <p style="font-size: 18px; margin-top: 10px;"><strong>Net:</strong> €${(totalPaid - totalRefunds).toFixed(2)}</p>
+                            </div>
+                        `;
+                    }
+
+                    html += '</div>';
+                    document.getElementById('paymentsResponse').innerHTML = html;
+                } else {
+                    showResponse('paymentsResponse', result, true);
+                }
             } catch (error) {
                 showResponse('paymentsResponse', { error: error.message }, true);
             }
@@ -843,9 +960,13 @@
                 return;
             }
 
-            // Note: We need the actual session_id from the backend
-            // The billing endpoint doesn't return session_id currently
-            // For now, we'll pass the balance amount
+            // Use the actual session_id from billing data
+            const sessionId = bill.session_id;
+            if (!sessionId) {
+                showResponse('paymentsResponse', { error: 'Session ID not found in billing data' }, true);
+                return;
+            }
+
             try {
                 const response = await fetch(`${API_BASE}/payments`, {
                     method: 'POST',
@@ -855,7 +976,7 @@
                     },
                     body: JSON.stringify({
                         amount: amount,
-                        parkingsession_id: String(billIndex + 1)  // Convert to string
+                        session_id: sessionId
                     })
                 });
 
@@ -963,6 +1084,482 @@
                 `;
             } catch (error) {
                 showResponse('reservationsResponse', { error: error.message }, true);
+            }
+        }
+
+        // ==================== ADMIN FUNCTIONS ====================
+
+        async function getAdminDashboard() {
+            if (!token) {
+                showResponse('adminResponse', { error: 'Please login first' }, true);
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/admin/dashboard`, {
+                    headers: { 'authorization': token }
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    // Format dashboard data nicely
+                    const formatted = formatDashboardData(result);
+                    document.getElementById('adminResponse').innerHTML = formatted;
+                } else {
+                    showResponse('adminResponse', result, true);
+                }
+            } catch (error) {
+                showResponse('adminResponse', { error: error.message }, true);
+            }
+        }
+
+        function formatDashboardData(data) {
+            return `
+                <div class="response success">
+                    <h3>📊 System Overview</h3>
+
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-top: 20px;">
+                        <!-- Users Card -->
+                        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px;">
+                            <h4 style="margin: 0 0 10px 0;">👥 Users</h4>
+                            <p style="font-size: 32px; font-weight: bold; margin: 10px 0;">${data.users.total}</p>
+                            <p style="opacity: 0.9; margin: 5px 0;">Admins: ${data.users.admins}</p>
+                            <p style="opacity: 0.9; margin: 5px 0;">Regular: ${data.users.regular_users}</p>
+                            <p style="opacity: 0.9; margin: 5px 0;">New (30d): ${data.users.recent_new_users}</p>
+                        </div>
+
+                        <!-- Parking Lots Card -->
+                        <div style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 20px; border-radius: 10px;">
+                            <h4 style="margin: 0 0 10px 0;">🅿️ Parking Lots</h4>
+                            <p style="font-size: 32px; font-weight: bold; margin: 10px 0;">${data.parking_lots.total}</p>
+                            <p style="opacity: 0.9; margin: 5px 0;">Capacity: ${data.parking_lots.total_capacity}</p>
+                            <p style="opacity: 0.9; margin: 5px 0;">Reserved: ${data.parking_lots.total_reserved}</p>
+                            <p style="opacity: 0.9; margin: 5px 0;">Occupancy: ${data.parking_lots.occupancy_rate}%</p>
+                        </div>
+
+                        <!-- Sessions Card -->
+                        <div style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; padding: 20px; border-radius: 10px;">
+                            <h4 style="margin: 0 0 10px 0;">🚗 Sessions</h4>
+                            <p style="font-size: 32px; font-weight: bold; margin: 10px 0;">${data.sessions.total}</p>
+                            <p style="opacity: 0.9; margin: 5px 0;">Active: ${data.sessions.active}</p>
+                            <p style="opacity: 0.9; margin: 5px 0;">Completed: ${data.sessions.completed}</p>
+                        </div>
+
+                        <!-- Revenue Card -->
+                        <div style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); color: white; padding: 20px; border-radius: 10px;">
+                            <h4 style="margin: 0 0 10px 0;">💰 Revenue</h4>
+                            <p style="font-size: 32px; font-weight: bold; margin: 10px 0;">€${data.payments.net_revenue.toFixed(2)}</p>
+                            <p style="opacity: 0.9; margin: 5px 0;">Total: €${data.payments.total_revenue.toFixed(2)}</p>
+                            <p style="opacity: 0.9; margin: 5px 0;">Refunds: €${data.payments.total_refunds.toFixed(2)}</p>
+                            <p style="opacity: 0.9; margin: 5px 0;">Pending: ${data.payments.pending_payments}</p>
+                        </div>
+                    </div>
+
+                    <h4 style="margin-top: 30px;">Recent Activity</h4>
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; font-weight: bold; padding: 10px; background: #f8f9fa; border-radius: 5px;">Recent Sessions (${data.recent_sessions.length})</summary>
+                        <pre style="margin-top: 10px;">${JSON.stringify(data.recent_sessions, null, 2)}</pre>
+                    </details>
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; font-weight: bold; padding: 10px; background: #f8f9fa; border-radius: 5px;">Recent Payments (${data.recent_payments.length})</summary>
+                        <pre style="margin-top: 10px;">${JSON.stringify(data.recent_payments, null, 2)}</pre>
+                    </details>
+                </div>
+            `;
+        }
+
+        async function getAllUsers() {
+            if (!token) {
+                showResponse('adminResponse', { error: 'Please login first' }, true);
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/admin/users`, {
+                    headers: { 'authorization': token }
+                });
+
+                const result = await response.json();
+
+                if (response.ok && Array.isArray(result)) {
+                    let html = `
+                        <div class="response success">
+                            <h3>👥 All Users (${result.length})</h3>
+                            <div style="overflow-x: auto; margin-top: 15px;">
+                                <table style="width: 100%; border-collapse: collapse; background: white;">
+                                    <thead>
+                                        <tr style="background: #667eea; color: white;">
+                                            <th style="padding: 10px; text-align: left;">ID</th>
+                                            <th style="padding: 10px; text-align: left;">Username</th>
+                                            <th style="padding: 10px; text-align: left;">Name</th>
+                                            <th style="padding: 10px; text-align: left;">Email</th>
+                                            <th style="padding: 10px; text-align: left;">Role</th>
+                                            <th style="padding: 10px; text-align: left;">Created</th>
+                                            <th style="padding: 10px; text-align: left;">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                    `;
+
+                    result.forEach(user => {
+                        const roleColor = user.role === 'ADMIN' ? '#ffc107' : '#6c757d';
+                        html += `
+                            <tr style="border-bottom: 1px solid #ddd;">
+                                <td style="padding: 10px;">${user.id}</td>
+                                <td style="padding: 10px;"><strong>${user.username}</strong></td>
+                                <td style="padding: 10px;">${user.name || 'N/A'}</td>
+                                <td style="padding: 10px;">${user.email || 'N/A'}</td>
+                                <td style="padding: 10px;"><span style="background: ${roleColor}; color: white; padding: 3px 8px; border-radius: 3px; font-size: 12px;">${user.role}</span></td>
+                                <td style="padding: 10px;">${user.created_at || 'N/A'}</td>
+                                <td style="padding: 10px;">
+                                    <button class="btn btn-secondary" onclick="getUserDetails(${user.id})" style="padding: 5px 10px; font-size: 12px;">Details</button>
+                                </td>
+                            </tr>
+                        `;
+                    });
+
+                    html += `
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    `;
+
+                    document.getElementById('adminResponse').innerHTML = html;
+                } else {
+                    showResponse('adminResponse', result, true);
+                }
+            } catch (error) {
+                showResponse('adminResponse', { error: error.message }, true);
+            }
+        }
+
+        async function getUserDetails(userId) {
+            if (!token) {
+                showResponse('adminResponse', { error: 'Please login first' }, true);
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/admin/users/${userId}`, {
+                    headers: { 'authorization': token }
+                });
+
+                const result = await response.json();
+                showResponse('adminResponse', result, !response.ok);
+            } catch (error) {
+                showResponse('adminResponse', { error: error.message }, true);
+            }
+        }
+
+        async function getParkingStats() {
+            if (!token) {
+                showResponse('adminResponse', { error: 'Please login first' }, true);
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/admin/parking-lots/stats`, {
+                    headers: { 'authorization': token }
+                });
+
+                const result = await response.json();
+
+                if (response.ok && Array.isArray(result)) {
+                    let html = `
+                        <div class="response success">
+                            <h3>🅿️ Parking Lot Statistics</h3>
+                            <div style="display: grid; gap: 15px; margin-top: 15px;">
+                    `;
+
+                    result.forEach(lot => {
+                        const occupancyColor = lot.occupancy_rate > 80 ? '#dc3545' : lot.occupancy_rate > 50 ? '#ffc107' : '#28a745';
+                        html += `
+                            <div style="border: 2px solid #ddd; padding: 15px; border-radius: 10px; background: white;">
+                                <h4 style="margin: 0 0 10px 0; color: #667eea;">${lot.name}</h4>
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
+                                    <div>
+                                        <p style="margin: 5px 0; font-size: 14px; color: #666;">Location</p>
+                                        <p style="margin: 5px 0; font-weight: bold;">${lot.location || 'N/A'}</p>
+                                    </div>
+                                    <div>
+                                        <p style="margin: 5px 0; font-size: 14px; color: #666;">Capacity</p>
+                                        <p style="margin: 5px 0; font-weight: bold;">${lot.reserved} / ${lot.capacity}</p>
+                                    </div>
+                                    <div>
+                                        <p style="margin: 5px 0; font-size: 14px; color: #666;">Occupancy</p>
+                                        <p style="margin: 5px 0; font-weight: bold; color: ${occupancyColor};">${lot.occupancy_rate}%</p>
+                                    </div>
+                                    <div>
+                                        <p style="margin: 5px 0; font-size: 14px; color: #666;">Total Sessions</p>
+                                        <p style="margin: 5px 0; font-weight: bold;">${lot.total_sessions}</p>
+                                    </div>
+                                    <div>
+                                        <p style="margin: 5px 0; font-size: 14px; color: #666;">Active</p>
+                                        <p style="margin: 5px 0; font-weight: bold;">${lot.active_sessions}</p>
+                                    </div>
+                                    <div>
+                                        <p style="margin: 5px 0; font-size: 14px; color: #666;">Revenue</p>
+                                        <p style="margin: 5px 0; font-weight: bold; color: #28a745;">€${lot.total_revenue.toFixed(2)}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+
+                    html += `
+                            </div>
+                        </div>
+                    `;
+
+                    document.getElementById('adminResponse').innerHTML = html;
+                } else {
+                    showResponse('adminResponse', result, true);
+                }
+            } catch (error) {
+                showResponse('adminResponse', { error: error.message }, true);
+            }
+        }
+
+        async function getActiveSessions() {
+            if (!token) {
+                showResponse('adminResponse', { error: 'Please login first' }, true);
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/admin/sessions/active`, {
+                    headers: { 'authorization': token }
+                });
+
+                const result = await response.json();
+
+                if (response.ok && Array.isArray(result)) {
+                    let html = `
+                        <div class="response success">
+                            <h3>🔴 Active Sessions (${result.length})</h3>
+                    `;
+
+                    if (result.length === 0) {
+                        html += '<p style="margin-top: 15px;">No active sessions at the moment.</p>';
+                    } else {
+                        html += '<div style="display: grid; gap: 15px; margin-top: 15px;">';
+
+                        result.forEach(session => {
+                            html += `
+                                <div style="border: 2px solid #28a745; padding: 15px; border-radius: 10px; background: #f0f9ff;">
+                                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
+                                        <div>
+                                            <p style="margin: 5px 0; font-size: 14px; color: #666;">User</p>
+                                            <p style="margin: 5px 0; font-weight: bold;">${session.username || 'N/A'} (${session.user_name || 'N/A'})</p>
+                                        </div>
+                                        <div>
+                                            <p style="margin: 5px 0; font-size: 14px; color: #666;">Vehicle</p>
+                                            <p style="margin: 5px 0; font-weight: bold;">${session.license_plate || 'N/A'}</p>
+                                            <p style="margin: 5px 0; font-size: 12px; color: #666;">${session.make || ''} ${session.model || ''}</p>
+                                        </div>
+                                        <div>
+                                            <p style="margin: 5px 0; font-size: 14px; color: #666;">Location</p>
+                                            <p style="margin: 5px 0; font-weight: bold;">${session.parking_lot_name || 'N/A'}</p>
+                                            <p style="margin: 5px 0; font-size: 12px; color: #666;">${session.parking_lot_location || ''}</p>
+                                        </div>
+                                        <div>
+                                            <p style="margin: 5px 0; font-size: 14px; color: #666;">Started</p>
+                                            <p style="margin: 5px 0; font-weight: bold;">${session.started || 'N/A'}</p>
+                                        </div>
+                                        <div>
+                                            <p style="margin: 5px 0; font-size: 14px; color: #666;">Duration</p>
+                                            <p style="margin: 5px 0; font-weight: bold;">${session.duration_minutes || 0} min</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        });
+
+                        html += '</div>';
+                    }
+
+                    html += '</div>';
+                    document.getElementById('adminResponse').innerHTML = html;
+                } else {
+                    showResponse('adminResponse', result, true);
+                }
+            } catch (error) {
+                showResponse('adminResponse', { error: error.message }, true);
+            }
+        }
+
+        async function getRevenueSummary() {
+            if (!token) {
+                showResponse('adminResponse', { error: 'Please login first' }, true);
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/admin/revenue/summary`, {
+                    headers: { 'authorization': token }
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    let html = `
+                        <div class="response success">
+                            <h3>💰 Revenue Summary</h3>
+
+                            <h4 style="margin-top: 20px;">Revenue by Parking Lot</h4>
+                            <div style="overflow-x: auto;">
+                                <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+                                    <thead>
+                                        <tr style="background: #667eea; color: white;">
+                                            <th style="padding: 10px; text-align: left;">Parking Lot</th>
+                                            <th style="padding: 10px; text-align: left;">Location</th>
+                                            <th style="padding: 10px; text-align: right;">Revenue</th>
+                                            <th style="padding: 10px; text-align: right;">Refunds</th>
+                                            <th style="padding: 10px; text-align: right;">Payments</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                    `;
+
+                    result.revenue_by_parking_lot.forEach(lot => {
+                        html += `
+                            <tr style="border-bottom: 1px solid #ddd;">
+                                <td style="padding: 10px;"><strong>${lot.name}</strong></td>
+                                <td style="padding: 10px;">${lot.location || 'N/A'}</td>
+                                <td style="padding: 10px; text-align: right; color: #28a745; font-weight: bold;">€${lot.revenue.toFixed(2)}</td>
+                                <td style="padding: 10px; text-align: right; color: #dc3545;">€${Math.abs(lot.refunds).toFixed(2)}</td>
+                                <td style="padding: 10px; text-align: right;">${lot.payment_count}</td>
+                            </tr>
+                        `;
+                    });
+
+                    html += `
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <h4 style="margin-top: 30px;">Top Paying Users</h4>
+                            <div style="overflow-x: auto;">
+                                <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+                                    <thead>
+                                        <tr style="background: #667eea; color: white;">
+                                            <th style="padding: 10px; text-align: left;">Username</th>
+                                            <th style="padding: 10px; text-align: left;">Name</th>
+                                            <th style="padding: 10px; text-align: right;">Total Paid</th>
+                                            <th style="padding: 10px; text-align: right;">Payments</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                    `;
+
+                    result.top_paying_users.forEach(user => {
+                        html += `
+                            <tr style="border-bottom: 1px solid #ddd;">
+                                <td style="padding: 10px;"><strong>${user.username}</strong></td>
+                                <td style="padding: 10px;">${user.name || 'N/A'}</td>
+                                <td style="padding: 10px; text-align: right; color: #28a745; font-weight: bold;">€${user.total_paid.toFixed(2)}</td>
+                                <td style="padding: 10px; text-align: right;">${user.payment_count}</td>
+                            </tr>
+                        `;
+                    });
+
+                    html += `
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    `;
+
+                    document.getElementById('adminResponse').innerHTML = html;
+                } else {
+                    showResponse('adminResponse', result, true);
+                }
+            } catch (error) {
+                showResponse('adminResponse', { error: error.message }, true);
+            }
+        }
+
+        async function getSystemHealth() {
+            if (!token) {
+                showResponse('adminResponse', { error: 'Please login first' }, true);
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/admin/system/health`, {
+                    headers: { 'authorization': token }
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    const statusColor = result.health_status === 'healthy' ? '#28a745' : '#ffc107';
+                    const statusIcon = result.health_status === 'healthy' ? '✅' : '⚠️';
+
+                    let html = `
+                        <div class="response ${result.health_status === 'healthy' ? 'success' : 'error'}">
+                            <h3>🏥 System Health</h3>
+
+                            <div style="background: ${statusColor}; color: white; padding: 20px; border-radius: 10px; margin: 20px 0; text-align: center;">
+                                <h2 style="margin: 0; font-size: 48px;">${statusIcon}</h2>
+                                <h3 style="margin: 10px 0 0 0; text-transform: uppercase;">${result.health_status.replace('_', ' ')}</h3>
+                            </div>
+
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 20px;">
+                                <div style="border: 2px solid ${result.unpaid_completed_sessions > 0 ? '#dc3545' : '#28a745'}; padding: 15px; border-radius: 10px;">
+                                    <p style="margin: 0; font-size: 14px; color: #666;">Unpaid Completed Sessions</p>
+                                    <p style="margin: 10px 0 0 0; font-size: 32px; font-weight: bold; color: ${result.unpaid_completed_sessions > 0 ? '#dc3545' : '#28a745'};">${result.unpaid_completed_sessions}</p>
+                                </div>
+
+                                <div style="border: 2px solid ${result.long_active_sessions > 0 ? '#dc3545' : '#28a745'}; padding: 15px; border-radius: 10px;">
+                                    <p style="margin: 0; font-size: 14px; color: #666;">Long Active Sessions (>7d)</p>
+                                    <p style="margin: 10px 0 0 0; font-size: 32px; font-weight: bold; color: ${result.long_active_sessions > 0 ? '#dc3545' : '#28a745'};">${result.long_active_sessions}</p>
+                                </div>
+
+                                <div style="border: 2px solid ${result.pending_payments > 0 ? '#ffc107' : '#28a745'}; padding: 15px; border-radius: 10px;">
+                                    <p style="margin: 0; font-size: 14px; color: #666;">Pending Payments</p>
+                                    <p style="margin: 10px 0 0 0; font-size: 32px; font-weight: bold; color: ${result.pending_payments > 0 ? '#ffc107' : '#28a745'};">${result.pending_payments}</p>
+                                </div>
+
+                                <div style="border: 2px solid #6c757d; padding: 15px; border-radius: 10px;">
+                                    <p style="margin: 0; font-size: 14px; color: #666;">Inactive Users (>90d)</p>
+                                    <p style="margin: 10px 0 0 0; font-size: 32px; font-weight: bold; color: #6c757d;">${result.inactive_users}</p>
+                                </div>
+                            </div>
+                    `;
+
+                    if (result.health_status !== 'healthy') {
+                        html += `
+                            <div style="background: #fff3cd; border: 2px solid #ffc107; padding: 15px; border-radius: 10px; margin-top: 20px;">
+                                <h4 style="margin: 0 0 10px 0; color: #856404;">⚠️ Action Required</h4>
+                                <ul style="margin: 0; padding-left: 20px; color: #856404;">
+                        `;
+
+                        if (result.unpaid_completed_sessions > 0) {
+                            html += `<li>Review and follow up on ${result.unpaid_completed_sessions} unpaid completed sessions</li>`;
+                        }
+                        if (result.long_active_sessions > 0) {
+                            html += `<li>Investigate ${result.long_active_sessions} sessions that have been active for more than 7 days</li>`;
+                        }
+                        if (result.pending_payments > 0) {
+                            html += `<li>Process ${result.pending_payments} pending payments</li>`;
+                        }
+
+                        html += `
+                                </ul>
+                            </div>
+                        `;
+                    }
+
+                    html += '</div>';
+                    document.getElementById('adminResponse').innerHTML = html;
+                } else {
+                    showResponse('adminResponse', result, true);
+                }
+            } catch (error) {
+                showResponse('adminResponse', { error: error.message }, true);
             }
         }
     </script>
