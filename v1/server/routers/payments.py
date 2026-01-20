@@ -12,6 +12,14 @@ from ..logging_config import log_event
 
 router = APIRouter()
 
+_VALID_PAYMENT_METHODS = {
+    "credit_card",
+    "debit_card",
+    "ideal",
+    "paypal",
+    "bank_transfer",
+}
+
 #pydantic model voor de request body type
 class PaymentIn(BaseModel):
     transaction: Optional[str] = None
@@ -43,6 +51,14 @@ def create_payment(payload: PaymentIn, user = Depends(require_session), con: sql
         log_event(level="WARNING", event="payment_create_failed", message="amount_zero_or_negative",
                   username=user["username"])
         raise HTTPException(400, detail={"error": "Invalid amount"})
+
+    # Optional validation for tests/clients providing a payment_method.
+    if payload.payment_method is not None:
+        method = (payload.payment_method or "").strip().lower()
+        if method not in _VALID_PAYMENT_METHODS:
+            log_event(level="WARNING", event="payment_create_failed", message="unsupported_payment_method",
+                      username=user.get("username"), payment_method=payload.payment_method)
+            raise HTTPException(422, detail={"error": "Unsupported payment_method"})
 
     # Use database function to get user ID
     user_id = get_user_id_by_username(con, user.get("username"))

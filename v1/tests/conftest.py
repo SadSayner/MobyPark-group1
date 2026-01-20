@@ -204,3 +204,39 @@ def parking_lot_id(test_client, admin_token):
             return lots[0]["id"]
 
     pytest.skip("No parking lots available")
+
+
+@pytest.fixture(scope="function")
+def setup_test_session(test_client, user_token, parking_lot_id):
+    """Create an active parking session for tests that need a valid session_id.
+
+    Uses the real sessions endpoint under /parking-lots to avoid relying on legacy
+    /sessions routes, and generates a unique license plate to avoid UNIQUE
+    constraint conflicts across tests.
+    """
+    import uuid
+
+    license_plate = f"TEST-{uuid.uuid4().hex[:6].upper()}"
+
+    start = test_client.post(
+        f"/parking-lots/{parking_lot_id}/sessions/start",
+        headers={"Authorization": user_token},
+        json={"licenseplate": license_plate},
+    )
+    if start.status_code in {200, 201}:
+        payload = start.json() or {}
+        return payload.get("id") or (payload.get("session") or {}).get("session_id")
+
+    # Fallback: list sessions for this parking lot (may be filtered by user)
+    res = test_client.get(
+        f"/parking-lots/{parking_lot_id}/sessions",
+        headers={"Authorization": user_token},
+    )
+    if res.status_code == 200:
+        data = res.json()
+        if isinstance(data, list) and data:
+            first = data[0]
+            if isinstance(first, dict):
+                return first.get("session_id") or first.get("id")
+
+    pytest.skip(f"Could not create a test session (start={start.status_code}).")

@@ -64,15 +64,47 @@ def create_vehicle(payload: VehicleIn, user = Depends(require_session), con: sql
         raise HTTPException(
             400, detail={"error": "Vehicle already exists", "id": exists["id"]})
 
+    # Guard against global uniqueness on vehicles.license_plate: the plate may exist
+    # already (e.g., created in another test/user) but not be linked to this user.
+    existing_vehicle = con.execute(
+        "SELECT id FROM vehicles WHERE lower(replace(license_plate,'-','')) = ?",
+        (lid,),
+    ).fetchone()
+    if existing_vehicle:
+        log_event(
+            "WARNING",
+            event="vehicle_create_failed",
+            username=user.get("username"),
+            message="vehicle_plate_taken",
+            vehicle_id=existing_vehicle["id"],
+        )
+        raise HTTPException(
+            400, detail={"error": "Vehicle already exists", "id": existing_vehicle["id"]}
+        )
+
     created_at = now_str()
     # Insert into vehicles table with all fields
-    con.execute(
-        """
-        INSERT INTO vehicles (license_plate, make, model, color, year, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-        """,
-        (payload.license_plate, payload.make, payload.model, payload.color, payload.year, created_at),
-    )
+    try:
+        con.execute(
+            """
+            INSERT INTO vehicles (license_plate, make, model, color, year, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (payload.license_plate, payload.make, payload.model, payload.color, payload.year, created_at),
+        )
+    except sqlite3.IntegrityError:
+        # If another request/test inserted the same plate, convert DB error to a 400.
+        existing_vehicle = con.execute(
+            "SELECT id FROM vehicles WHERE lower(replace(license_plate,'-','')) = ?",
+            (lid,),
+        ).fetchone()
+        raise HTTPException(
+            400,
+            detail={
+                "error": "Vehicle already exists",
+                "id": existing_vehicle["id"] if existing_vehicle else None,
+            },
+        )
     vid = con.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
 
     # Link vehicle to user in user_vehicles

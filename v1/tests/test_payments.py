@@ -12,24 +12,24 @@ class TestPayments:
         (0, [400, 422]),
         (-10, [400, 422]),
     ])
-    def test_create_payment_various_amounts(self, test_client, user_token, amount, expected_status):
+    def test_create_payment_various_amounts(self, test_client, user_token, setup_test_session, amount, expected_status):
         """Test creating payment with various amounts"""
         response = test_client.post("/payments",
             headers={"Authorization": user_token},
             json={
-                "session_id": 1,
+                "session_id": setup_test_session,
                 "amount": amount,
                 "payment_method": "credit_card"
             })
         assert response.status_code in expected_status
 
-    def test_payment_for_already_paid_session(self, test_client, user_token):
+    def test_payment_for_already_paid_session(self, test_client, user_token, setup_test_session):
         """Test payment for already paid session (if supported)"""
         # This is a placeholder; actual implementation depends on API
         response = test_client.post("/payments",
             headers={"Authorization": user_token},
             json={
-                "session_id": 1,
+                "session_id": setup_test_session,
                 "amount": 15.50,
                 "payment_method": "credit_card"
             })
@@ -37,7 +37,7 @@ class TestPayments:
         response2 = test_client.post("/payments",
             headers={"Authorization": user_token},
             json={
-                "session_id": 1,
+                "session_id": setup_test_session,
                 "amount": 15.50,
                 "payment_method": "credit_card"
             })
@@ -58,36 +58,36 @@ class TestPayments:
                 for field in ["id", "session_id", "amount", "payment_method", "status"]:
                     assert field in p
 
-    def test_create_payment(self, test_client, user_token):
+    def test_create_payment(self, test_client, user_token, setup_test_session):
         """Test creating a payment"""
         response = test_client.post("/payments",
             headers={"Authorization": user_token},
             json={
-                "session_id": 1,
+                "session_id": setup_test_session,
                 "amount": 15.50,
                 "payment_method": "credit_card"
             })
         # May fail if session doesn't exist
         assert response.status_code in [200, 201, 400, 404]
 
-    def test_create_payment_invalid_amount(self, test_client, user_token):
+    def test_create_payment_invalid_amount(self, test_client, user_token, setup_test_session):
         """Test creating payment with zero/negative amount"""
         for amt in [0, -10]:
             response = test_client.post("/payments",
                 headers={"Authorization": user_token},
                 json={
-                    "session_id": 1,
+                    "session_id": setup_test_session,
                     "amount": amt,
                     "payment_method": "credit_card"
                 })
             assert response.status_code in [400, 422]
 
-    def test_create_payment_unsupported_method(self, test_client, user_token):
+    def test_create_payment_unsupported_method(self, test_client, user_token, setup_test_session):
         """Test payment creation with unsupported payment method"""
         response = test_client.post("/payments",
             headers={"Authorization": user_token},
             json={
-                "session_id": 1,
+                "session_id": setup_test_session,
                 "amount": 10.0,
                 "payment_method": "bitcoin"
             })
