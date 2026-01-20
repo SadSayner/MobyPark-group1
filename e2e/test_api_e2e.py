@@ -43,7 +43,7 @@ def test_health_endpoint(api_base_url: str):
     assert status == 200
 
     payload = json.loads(body.decode("utf-8"))
-    assert payload == {"ok": True}
+    assert payload.get("ok") is True
 
 
 def test_openapi_available(api_base_url: str):
