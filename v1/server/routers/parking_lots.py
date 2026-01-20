@@ -70,7 +70,28 @@ def update_parking_lot_route(lid: str, data: Dict[str, Any] = Body(...), admin =
 
     return {"message": "Parking lot modified"}
 
+@router.delete("/parking-lots/{lid}")
+def delete_parking_lot_route(lid: str, admin = Depends(require_admin), con: sqlite3.Connection = Depends(get_db)):
+    #call database delete
+    success = delete_parking_lot(con, int(lid))
+    if not success:
+        raise HTTPException(404, detail="Parking lot not found")
+    return {"message": "Parking lot deleted"}
 
+@router.get("/parking-lots")
+def list_parking_lots(con: sqlite3.Connection = Depends(get_db)):
+    #call database get
+    parking_lots = get_all_parking_lots(con)
+    #convert to dicts
+    return [lot.to_dict() for lot in parking_lots]
+
+@router.get("/parking-lots/{lid}")
+def get_parking_lot_route(lid: str, con: sqlite3.Connection = Depends(get_db)):
+    #call database get
+    parking_lot = get_parking_lot_by_id(con, int(lid))
+    if parking_lot is None:
+        raise HTTPException(404, detail="Parking lot not found")
+    return parking_lot.to_dict()
 
 #Sessions 
 @router.post("/parking-lots/{lid}/sessions/start")
