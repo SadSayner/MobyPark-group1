@@ -216,3 +216,4 @@ v1/Database/__pycache__/
 v1/server/__pycache__/
 v1/server/tests/__pycache__/
 v1/server/tests/test_files/__pycache__/
+v1/Database/MobyPark.db-wal
