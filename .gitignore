@@ -209,3 +209,10 @@ v1/Workshop - Refactoring/sphinx-example/.DS_Store
 v1/Workshop - Refactoring/sphinx-example/docs/_build/.DS_Store
 v1/data
 v1/Database/MobyPark.db
+v1/Database/MobyPark.db-journal
+v1/Database/.DS_Store
+v1/Database/usernames_temp.csv
+v1/Database/__pycache__/
+v1/server/__pycache__/
+v1/server/tests/__pycache__/
+v1/server/tests/test_files/__pycache__/

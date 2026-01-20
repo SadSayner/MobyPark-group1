@@ -247,7 +247,7 @@ def get_all_users(con: sqlite3.Connection):
     sql = "SELECT * FROM users"
     cur = con.execute(sql)
     rows = cur.fetchall()
-    return [User_model.from_dict(row) for row in rows]
+    return [User_model.from_dict(**dict(row)) for row in rows]
 
 
 def get_user_by_id(con: sqlite3.Connection, user_id: int):
@@ -256,7 +256,7 @@ def get_user_by_id(con: sqlite3.Connection, user_id: int):
     cur = con.execute(sql, (user_id,))
     row = cur.fetchone()
     if row:
-        return User_model.from_dict(row)
+        return User_model.from_dict(**dict(row))
     return None
 
 
@@ -266,7 +266,7 @@ def get_users_by_username(con: sqlite3.Connection, username: str):
     cur = con.execute(sql, (username,))
     user = cur.fetchone()
     if user:
-        return User_model.from_dict(**user)
+        return User_model.from_dict(**dict(user))
     return None
 
 
@@ -276,7 +276,7 @@ def get_users_by_name(con: sqlite3.Connection, name: str):
     cur = con.execute(sql, (name,))
     rows = cur.fetchall()
     if rows:
-        return [User_model.from_dict(**row) for row in rows]
+        return [User_model.from_dict(**dict(row)) for row in rows]
     return None
 
 
@@ -286,18 +286,7 @@ def get_users_by_email(con: sqlite3.Connection, email: str):
     cur = con.execute(sql, (email,))
     rows = cur.fetchall()
     if rows:
-        return [User_model.from_dict(**row) for row in rows]
-    return None
-
-
-def get_user_by_email(con: sqlite3.Connection, email: str):
-    """Get a single user by email address"""
-    con.execute("PRAGMA foreign_keys = ON;")
-    sql = "SELECT * FROM users WHERE email = ?"
-    cur = con.execute(sql, (email,))
-    user = cur.fetchone()
-    if user:
-        return User_model.from_dict(**user)
+        return [User_model.from_dict(**dict(row)) for row in rows]
     return None
 
 

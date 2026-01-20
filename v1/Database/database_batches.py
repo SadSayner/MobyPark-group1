@@ -13,6 +13,7 @@ from __future__ import annotations
 import sqlite3
 import re
 import csv
+import gc
 import logging
 from typing import Iterable, List, Dict, Any, Sequence, Tuple, Union, Set
 from contextlib import contextmanager
@@ -26,13 +27,14 @@ payment_logger = logging.getLogger("payment_failures")
 payment_logger.setLevel(logging.DEBUG)
 # Verwijder bestaande handlers om duplicatie te voorkomen
 payment_logger.handlers = []
-file_handler = logging.FileHandler(PAYMENT_LOG_FILE, mode='w', encoding='utf-8')
+file_handler = logging.FileHandler(
+    PAYMENT_LOG_FILE, mode='w', encoding='utf-8')
 file_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
 payment_logger.addHandler(file_handler)
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from storage_utils import *  # noqa
-from database_creation import create_database  # noqa
+from v1.storage_utils import *  # noqa
+from v1.Database.database_creation import create_database  # noqa
 
 Row = Dict[str, Any]
 Rows = Iterable[Row]
@@ -1255,6 +1257,9 @@ def insert_parking_sessions(
 
 
 def load_parking_sessions(debug=False, max_files=1501) -> List[dict]:
+    """
+    DEPRECATED: Laadt alle sessies in geheugen. Gebruik load_and_insert_sessions_batched() voor grote datasets.
+    """
     all_sessions = []
 
     start_time = datetime.now()
@@ -1272,6 +1277,93 @@ def load_parking_sessions(debug=False, max_files=1501) -> List[dict]:
             f"Loaded total {len(all_sessions)} sessions in {(datetime.now() - start_time).total_seconds():.2f} seconds."
         )
     return all_sessions
+
+
+def load_and_insert_sessions_batched(
+    conn: sqlite3.Connection,
+    *,
+    debug: bool = False,
+    max_files: int = 1501,
+    files_per_batch: int = 20,
+) -> Dict[str, int]:
+    """
+    Laad en insert parking sessions in batches om geheugen te besparen.
+
+    Laadt telkens `files_per_batch` bestanden, insert ze in de database,
+    en geeft het geheugen vrij voordat de volgende batch wordt geladen.
+
+    Args:
+        conn: SQLite database connectie
+        debug: Print debug informatie
+        max_files: Maximum aantal bestanden om te laden (1-indexed, exclusief)
+        files_per_batch: Aantal bestanden per batch (default 20)
+
+    Returns:
+        Dict met totalen: inserted, skipped, failed
+    """
+    ensure_unique_index_sessions(conn)
+
+    total_inserted = 0
+    total_skipped = 0
+    total_failed = 0
+    total_sessions = 0
+
+    start_time = datetime.now()
+    batch_num = 0
+
+    for batch_start in range(1, max_files, files_per_batch):
+        batch_end = min(batch_start + files_per_batch, max_files)
+        batch_sessions = []
+
+        # Laad alleen de bestanden voor deze batch
+        for i in range(batch_start, batch_end):
+            file_path = f"v1/data/pdata/p{i}-sessions.json"
+            try:
+                data = load_data(file_path)
+                batch_sessions.extend(data.values())
+            except FileNotFoundError:
+                pass
+
+        if not batch_sessions:
+            continue
+
+        batch_num += 1
+        total_sessions += len(batch_sessions)
+
+        # Insert deze batch
+        batch_start_time = datetime.now()
+        result = insert_parking_sessions(conn, batch_sessions, debug=debug)
+        batch_time = (datetime.now() - batch_start_time).total_seconds()
+
+        total_inserted += result.get('inserted', 0)
+        total_skipped += result.get('skipped', 0)
+        total_failed += result.get('failed', 0)
+
+        # Altijd voortgang printen
+        total_batches = (max_files - 1 + files_per_batch - 1) // files_per_batch
+        print(
+            f"  Batch {batch_num}/{total_batches} (files {batch_start}-{batch_end-1}): "
+            f"{len(batch_sessions)} sessions, inserted={result.get('inserted', 0)}, "
+            f"failed={result.get('failed', 0)}, time={batch_time:.2f}s"
+        )
+
+        # Expliciet geheugen vrijgeven
+        del batch_sessions
+        gc.collect()
+
+    if debug:
+        total_time = (datetime.now() - start_time).total_seconds()
+        print(
+            f"Sessions complete: {total_inserted} inserted, {total_failed} failed "
+            f"from {total_sessions} total in {total_time:.2f}s"
+        )
+
+    return {
+        "inserted": total_inserted,
+        "skipped": total_skipped,
+        "failed": total_failed,
+        "total_loaded": total_sessions,
+    }
 
 
 def make_batches(all_info, batch_size: int = 400000):
@@ -1340,26 +1432,18 @@ def fill_database(debug_mode=False, max_session_files=None, max_payments=None):
                             users_source=users, debug=debug_mode),
     )
 
-    # Laad sessions
-    all_sessions = load_parking_sessions(
-        debug=debug_mode, max_files=max_session_files)
-    print(f"\nInserting {len(all_sessions)} sessions in batches of 50,000...")
-    batches = list(make_batches(all_sessions, 50000))
-    total_inserted = 0
-    total_failed = 0
-
-    for idx, batch in enumerate(batches, 1):
-        batch_start = datetime.now()
-        result = insert_parking_sessions(conn, batch, debug=debug_mode)
-        batch_time = (datetime.now() - batch_start).total_seconds()
-        total_inserted += result['inserted']
-        total_failed += result['failed']
-        print(f"  Batch {idx}/{len(batches)}: inserted={result['inserted']}, "
-              f"failed={result['failed']}, time={batch_time:.2f}s, "
-              f"progress={total_inserted}/{len(all_sessions)}")
-
+    # Laad sessions met geheugen-efficiente batched methode
+    print(f"\nInserting sessions (loading {max_session_files-1 if max_session_files else 1500} files in batches of 10)...")
+    session_result = load_and_insert_sessions_batched(
+        conn,
+        debug=debug_mode,
+        max_files=max_session_files if max_session_files else 1501,
+        files_per_batch=10,
+    )
     print(
-        f"Sessions complete: {total_inserted} inserted, {total_failed} failed\n")
+        f"Sessions complete: {session_result['inserted']} inserted, "
+        f"{session_result['failed']} failed from {session_result['total_loaded']} total\n"
+    )
 
     # Laad payments
     payments_raw = load_data("v1/data/payments.json")
@@ -1390,7 +1474,8 @@ def fill_database(debug_mode=False, max_session_files=None, max_payments=None):
     print(
         f"Payments complete: {total_inserted} inserted, {total_failed} failed, {total_duplicates} duplicates")
     if total_failed > 0:
-        print(f"  -> Bekijk {PAYMENT_LOG_FILE} voor details over gefaalde payments\n")
+        print(
+            f"  -> Bekijk {PAYMENT_LOG_FILE} voor details over gefaalde payments\n")
     else:
         print()
 
