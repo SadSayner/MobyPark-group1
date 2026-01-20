@@ -81,29 +81,26 @@ def init_database():
     print("Connecting to database...")
     conn = get_connection(db_path)
     try:
-        print("Checking user count...")
-        cur = conn.execute("SELECT COUNT(*) FROM users")
-        user_count = cur.fetchone()[0]
-        print(f"User count: {user_count}")
+        print("Checking payment count...")
+        cur = conn.execute("SELECT COUNT(*) FROM payments")
+        payment_count = cur.fetchone()[0]
+        print(f"Payment count: {payment_count}")
+        conn.close()
 
-        if user_count == 0:
-            print("Starting database fill (this may take a while)...")
-            log_event(level="INFO", event="startup", message="Database is empty, filling with seed data...")
+        if payment_count == 0:
             if os.getenv("MOBYPARK_SKIP_SEED", "").strip().lower() in {"1", "true", "yes", "y", "on"}:
                 log_event(level="INFO", event="startup", message="MOBYPARK_SKIP_SEED=1 set, skipping seed")
-                conn.close()
             else:
-                conn.close()
+                print("Starting database fill (this may take a while)...")
+                log_event(level="INFO", event="startup", message="Database is empty, filling with seed data...")
 
-            # Import and run fill_database
-            from v1.Database.database_batches import fill_database
-            fill_database(max_session_files=11)
-            log_event(level="INFO", event="startup", message="Database filled with seed data")
-            print("Database fill complete")
+                from v1.Database.database_batches import fill_database
+                fill_database()
+                log_event(level="INFO", event="startup", message="Database filled with seed data")
+                print("Database fill complete")
         else:
-            print(f"Database already has {user_count} users, skipping seed")
-            log_event(level="INFO", event="startup", message=f"Database contains {user_count} users, skipping seed")
-            conn.close()
+            print(f"Database already has {payment_count} payments, skipping seed")
+            log_event(level="INFO", event="startup", message=f"Database contains {payment_count} payments, skipping seed")
     except Exception as e:
         print(f"ERROR in init_database: {e}")
         log_event(level="ERROR", event="startup", message=f"Error checking database: {e}")

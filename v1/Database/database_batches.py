@@ -13,6 +13,7 @@ from __future__ import annotations
 import sqlite3
 import re
 import csv
+import gc
 import logging
 from typing import Iterable, List, Dict, Any, Sequence, Tuple, Union, Set
 from contextlib import contextmanager
@@ -32,8 +33,8 @@ file_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
 payment_logger.addHandler(file_handler)
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from storage_utils import *  # noqa
-from database_creation import create_database  # noqa
+from v1.storage_utils import *  # noqa
+from v1.Database.database_creation import create_database  # noqa
 
 Row = Dict[str, Any]
 Rows = Iterable[Row]
@@ -1348,6 +1349,7 @@ def load_and_insert_sessions_batched(
 
         # Expliciet geheugen vrijgeven
         del batch_sessions
+        gc.collect()
 
     if debug:
         total_time = (datetime.now() - start_time).total_seconds()
@@ -1410,7 +1412,7 @@ def fill_database(debug_mode=False, max_session_files=None, max_payments=None):
     print("Optimizing database for bulk inserts...")
     conn.execute("PRAGMA journal_mode = WAL;")  # Write-Ahead Logging
     conn.execute("PRAGMA synchronous = NORMAL;")  # Sneller, nog steeds veilig
-    conn.execute("PRAGMA cache_size = -64000;")  # 64MB cache
+    conn.execute("PRAGMA cache_size = -8000;")  # 8MB cache (verlaagd voor Docker)
     conn.execute("PRAGMA temp_store = MEMORY;")  # Temp tables in memory
     conn.commit()
 
@@ -1431,12 +1433,12 @@ def fill_database(debug_mode=False, max_session_files=None, max_payments=None):
     )
 
     # Laad sessions met geheugen-efficiente batched methode
-    print(f"\nInserting sessions (loading {max_session_files-1 if max_session_files else 1500} files in batches of 20)...")
+    print(f"\nInserting sessions (loading {max_session_files-1 if max_session_files else 1500} files in batches of 10)...")
     session_result = load_and_insert_sessions_batched(
         conn,
         debug=debug_mode,
         max_files=max_session_files if max_session_files else 1501,
-        files_per_batch=20,
+        files_per_batch=10,
     )
     print(
         f"Sessions complete: {session_result['inserted']} inserted, "
