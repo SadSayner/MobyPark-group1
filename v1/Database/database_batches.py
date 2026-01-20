@@ -22,7 +22,7 @@ import sys
 import os
 
 # Setup logging voor failed payments
-PAYMENT_LOG_FILE = "v1/Database/payment_failures.log"
+PAYMENT_LOG_FILE = os.path.join(os.path.dirname(__file__), "payment_failures.log")
 payment_logger = logging.getLogger("payment_failures")
 payment_logger.setLevel(logging.DEBUG)
 # Verwijder bestaande handlers om duplicatie te voorkomen
@@ -32,7 +32,7 @@ file_handler = logging.FileHandler(
 file_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
 payment_logger.addHandler(file_handler)
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from v1.storage_utils import *  # noqa
 from v1.Database.database_creation import create_database  # noqa
 
@@ -41,7 +41,7 @@ Rows = Iterable[Row]
 
 # -------------------------- Utilities --------------------------
 
-USER_ALIAS_TEMP_CSV = "v1/Database/usernames_temp.csv"
+USER_ALIAS_TEMP_CSV = os.path.join(os.path.dirname(__file__), "usernames_temp.csv")
 
 
 def to_list_of_dicts(
@@ -257,7 +257,7 @@ def build_aliases_from_user_json(
     for u in users:
         uname = (u.get("username") or "").strip()
         email = (u.get("email") or "").strip()
-        user_id = (u.get("id") or None).strip()
+        user_id = u.get("id")
         if not uname or not email:
             continue
 
@@ -1320,7 +1320,10 @@ def load_and_insert_sessions_batched(
             file_path = f"v1/data/pdata/p{i}-sessions.json"
             try:
                 data = load_data(file_path)
-                batch_sessions.extend(data.values())
+                if isinstance(data, dict):
+                    batch_sessions.extend(data.values())
+                elif isinstance(data, list):
+                    batch_sessions.extend(data)
             except FileNotFoundError:
                 pass
 

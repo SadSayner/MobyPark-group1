@@ -8,7 +8,7 @@ import sqlite3
 from ...storage_utils import load_json, save_user_data
 from ...session_manager import add_session, remove_session, get_session
 from ..deps import require_session
-from ...Database.database_logic import get_db, get_users_by_username, get_user_by_email, update_user
+from ...Database.database_logic import get_db, get_users_by_username, get_users_by_email, update_user
 from ..validation.validation import (
     is_valid_username,
     is_valid_password,
@@ -120,11 +120,13 @@ def login(payload: LoginBody, con: sqlite3.Connection = Depends(get_db)):
     # Try to find user by email first, then by username
     user = None
     if payload.email:
-        user = get_user_by_email(con, payload.email)
+        users = get_users_by_email(con, payload.email)
+        user = users[0] if users else None
     elif payload.username:
         # If username looks like an email, try email lookup first
         if '@' in payload.username:
-            user = get_user_by_email(con, payload.username)
+            users = get_users_by_email(con, payload.username)
+            user = users[0] if users else None
         # If not found, try username lookup
         if not user:
             user = get_users_by_username(con, payload.username)
