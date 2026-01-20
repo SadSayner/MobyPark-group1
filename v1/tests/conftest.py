@@ -219,20 +219,21 @@ def setup_test_session(test_client, user_token, parking_lot_id):
     if vehicle_response.status_code not in [200, 201]:
         pytest.skip(f"Could not create test vehicle: {vehicle_response.text}")
 
-    # 2. Start the session
-    session_response = test_client.post("/sessions/start",
+    # 2. Start the session using the correct endpoint
+    session_response = test_client.post(f"/parking-lots/{parking_lot_id}/sessions/start",
         headers={"Authorization": user_token},
         json={
-            "parking_lot_id": parking_lot_id,
-            "vehicle_id": unique_plate  # Use the license plate we just created
+            "licenseplate": unique_plate  # Use the license plate format the API expects
         })
 
     if session_response.status_code not in [200, 201]:
-        # Fallback: probeer een bestaande sessie te vinden als start faalt
-        res = test_client.get("/sessions", headers={"Authorization": user_token})
-        sessions = res.json()
-        if sessions:
-            return sessions[0]["id"]
-        pytest.skip(f"Could not start test session: {session_response.text}")
+        pytest.skip(f"Could not start test session: {session_response.status_code} - {session_response.text}")
 
-    return session_response.json()["id"]
+    # The response should contain session data with an ID
+    session_data = session_response.json()
+    if "session_id" in session_data:
+        return session_data["session_id"]
+    elif "id" in session_data:
+        return session_data["id"]
+    else:
+        pytest.skip(f"Session response missing ID: {session_data}")
