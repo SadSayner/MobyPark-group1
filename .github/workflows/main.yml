@@ -23,6 +23,7 @@ jobs:
           pip install -r requirements.txt
           pip install pytest httpx
 
+
       - name: Run Unit Tests
         run: |
           pytest v2/unittests 
@@ -40,7 +41,7 @@ jobs:
         run: |
           # Geef Elasticsearch tijd om op te starten
           sleep 30 
-          docker compose exec -T api pytest e2e/
+          docker compose exec -T api python -m pytest e2e/
 
   build-and-push:
     needs: [test, e2e-tests]
