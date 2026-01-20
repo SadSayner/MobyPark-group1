@@ -1494,4 +1494,4 @@ if __name__ == "__main__":
     # fill_database(debug_mode=True, max_session_files=11, max_payments=10000)
 
     # Voor productie: alle data laden (1500 session bestanden + alle payments)
-    fill_database(max_session_files=11)
+    fill_database()
