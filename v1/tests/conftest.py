@@ -60,9 +60,19 @@ def _clean_db_side_effects_for_tests():
     We only clear tables that are frequently mutated by tests and can cause
     order-dependent behavior (e.g., payments/session IDs).
     """
+    import os
+
+    from ..Database.database_creation import create_database
     from ..Database.database_logic import get_connection
 
-    con = get_connection()
+    # In CI the sqlite file may start empty (sqlite creates a new DB on connect),
+    # so ensure the schema exists before we attempt to delete from tables.
+    db_dir = os.path.dirname(os.path.abspath(__file__))
+    # Resolve the DB path the same way as database_logic.get_connection() does.
+    db_path = os.path.join(os.path.dirname(db_dir), "Database", "MobyPark.db")
+    create_database(db_path=db_path)
+
+    con = get_connection(db_path=db_path)
     try:
         # Delete in proper order to respect foreign key constraints
         # 1. Delete payments first (references sessions)
