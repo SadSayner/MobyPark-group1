@@ -49,8 +49,10 @@ def init_database():
     from v1.Database.database_creation import create_database
     from v1.Database.database_logic import get_connection
 
-    # Database pad bepalen
-    db_path = os.path.join(os.path.dirname(__file__), '..', 'Database', 'MobyPark.db')
+    # Database pad bepalen (allow overriding in tests/CI)
+    db_path = os.getenv("MOBYPARK_DB_PATH")
+    if not db_path:
+        db_path = os.path.join(os.path.dirname(__file__), '..', 'Database', 'MobyPark.db')
     db_path = os.path.abspath(db_path)
     print(f"Database path: {db_path}")
 

@@ -7,6 +7,8 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import tempfile
+import uuid
 
 import pytest
 
@@ -57,6 +59,10 @@ def api_base_url():
     env["PYTHONPATH"] = repo_root + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
     env.setdefault("MOBYPARK_SKIP_SEED", "1")
     env.setdefault("MOBYPARK_DISABLE_ELASTIC_LOGS", "1")
+    env.setdefault(
+        "MOBYPARK_DB_PATH",
+        os.path.join(tempfile.gettempdir(), f"mobipark_e2e_{uuid.uuid4().hex}.db"),
+    )
 
     cmd = [
         sys.executable,
