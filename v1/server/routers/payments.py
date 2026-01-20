@@ -162,7 +162,7 @@ def refund_payment(payload: PaymentIn, admin=Depends(require_admin), con: sqlite
         raise HTTPException(
             400, detail={"error": "amount must be greater than zero"})
 
-    # fetch admin id (prefer id from require_admin if present)
+    #fetch admin id (prefer id from require_admin if present)
     admin_id = admin.get("id")
     if admin_id is None:
         # Use database function to get admin ID
@@ -358,7 +358,6 @@ def list_my_payments(user=Depends(require_session), con: sqlite3.Connection = De
 
 @router.get("/payments/billing")
 def get_my_billing(user=Depends(require_session), con: sqlite3.Connection = Depends(get_db)):
-    # Alias for /billing endpoint
     return my_billing(user, con)
 
 

@@ -86,7 +86,6 @@ class TestAuthentication:
         assert "logged out" in response.json()["message"].lower()
 
   
-
     def test_register_missing_username(self, test_client):
         #test no username
         response = test_client.post("/auth/register", json={

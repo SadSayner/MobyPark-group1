@@ -27,23 +27,30 @@ def hash_password(password: str) -> str:
     hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
     return hashed.decode('utf-8')
 
-def verify_password(password: str, hashed: str) -> bool:
+def verify_password(password: str, hashed: str) -> tuple[bool, bool]:
     """
     Verify a password against a hash.
     Supports both bcrypt (new) and MD5 (legacy) for backwards compatibility.
+
+    Returns:
+        tuple[bool, bool]: (is_valid, needs_upgrade)
+            - is_valid: True if password matches the hash
+            - needs_upgrade: True if hash is MD5 and should be upgraded to bcrypt
     """
-    # Check if it's an MD5 hash (32 hex characters)
+    #Check if it's an MD5 hash (32 hex characters)
     if len(hashed) == 32 and all(c in '0123456789abcdef' for c in hashed.lower()):
         # Legacy MD5 hash - for backwards compatibility
         md5_hash = hashlib.md5(password.encode()).hexdigest()
-        return md5_hash == hashed
+        is_valid = md5_hash == hashed
+        return (is_valid, is_valid)  # If valid, needs upgrade from MD5 to bcrypt
 
-    # Modern bcrypt hash
+    #Modern bcrypt hash
     try:
-        return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
+        is_valid = bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
+        return (is_valid, False)  # bcrypt hash doesn't need upgrade
     except ValueError:
         # Invalid hash format
-        return False
+        return (False, False)
 
 class RegisterBody(BaseModel):
     username: str
@@ -106,7 +113,7 @@ def register(payload: RegisterBody, con: sqlite3.Connection = Depends(get_db)):
 def login(payload: LoginBody, con: sqlite3.Connection = Depends(get_db)):
     if not payload.password:
         raise HTTPException(status_code=400, detail="Password is required")
-    
+
     if not payload.email and not payload.username:
         raise HTTPException(status_code=400, detail="Email or username is required")
 
@@ -122,10 +129,18 @@ def login(payload: LoginBody, con: sqlite3.Connection = Depends(get_db)):
         if not user:
             user = get_users_by_username(con, payload.username)
 
-    if user and verify_password(payload.password, user.password):
-        session_token = str(uuid.uuid4())
-        add_session(session_token, {"id": user.id, "username": user.username, "name": user.name, "role": user.role})
-        return {"message": "Login successful", "session_token": session_token}
+    if user:
+        is_valid, needs_upgrade = verify_password(payload.password, user.password)
+        if is_valid:
+            # Automatically upgrade MD5 password to bcrypt
+            if needs_upgrade:
+                new_hash = hash_password(payload.password)
+                update_user(con, user.username, {"password": new_hash})
+
+            session_token = str(uuid.uuid4())
+            add_session(session_token, {"id": user.id, "username": user.username, "name": user.name, "role": user.role})
+            return {"message": "Login successful", "session_token": session_token}
+
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
 @router.get("/profile")
