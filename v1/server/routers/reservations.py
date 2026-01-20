@@ -121,6 +121,11 @@ def create_reservation(payload: ReservationIn, user = Depends(require_session), 
     if not parkinglot:
         raise HTTPException(404, detail="Parking lot not found")
 
+    #Check if vehicle exists
+    vehicle = con.execute("SELECT id FROM vehicles WHERE id = ?", (payload.vehicle_id,)).fetchone()
+    if not vehicle:
+        raise HTTPException(404, detail="Vehicle not found")
+
     created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # Insert reservation using database schema
