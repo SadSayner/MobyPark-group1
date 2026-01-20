@@ -82,6 +82,7 @@ def create_database(db_path="v1/Database/MobyPark.db"):
             user_id INTEGER NOT NULL,
             vehicle_id INTEGER,
             started TEXT NOT NULL,
+            stopped TEXT,
             duration_minutes INTEGER NOT NULL,
             payment_status TEXT NOT NULL,
             FOREIGN KEY (parking_lot_id) REFERENCES parking_lots(id) ON DELETE CASCADE,
