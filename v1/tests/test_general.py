@@ -12,7 +12,9 @@ class TestGeneralAPI:
         if endpoint == "/static/index.html":
             assert "text/html" in response.headers.get("content-type", "")
         elif endpoint == "/health":
-            assert response.json() == {"ok": True}
+            data = response.json()
+            assert data["ok"] is True
+            # May also contain additional fields like "database"
 
     def test_cors_headers_present(self, test_client):
         """Test CORS headers are present on responses"""

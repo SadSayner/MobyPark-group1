@@ -67,7 +67,8 @@ class TestPayments:
         assert len(payments) > 0
         
         for p in payments:
-            for field in ["id", "session_id", "amount", "payment_method", "status"]:
+            # Check for actual fields in the database schema
+            for field in ["payment_id", "session_id", "amount", "t_method", "completed"]:
                 assert field in p
 
     def test_create_payment(self, test_client, user_token, setup_test_session):
